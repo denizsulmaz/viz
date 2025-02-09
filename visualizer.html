@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sonic Metamorphosis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: black; 
+            cursor: none;
+        }
+        .flex{
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .top{
+            position: fixed;
+            top: 20px;
+        }
+        .bottom{
+            position: fixed;
+            bottom:20px;
+        }
+        svg{
+            width: 10px !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex">
+        <div class="top">
+            <svg width="469" height="63" viewBox="0 0 469 63" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M223.951 23.9278C224.553 26.0796 224.811 28.3174 224.811 30.8135V33.2235C224.811 36.1499 224.467 38.9042 223.692 41.4002C223.004 43.8963 221.627 46.5645 219.475 49.3188C217.323 51.987 214.655 54.3109 211.298 56.2906C207.941 58.1841 203.38 59.7334 197.699 61.0245C191.932 62.2295 185.305 62.832 177.903 62.832H0.423828V1.97964H177.73C184.014 1.97964 189.608 2.40999 194.6 3.18463C199.593 3.8732 203.81 4.99213 207.167 6.45534C210.524 7.91855 213.364 9.5539 215.774 11.2753C218.184 13.0828 219.991 15.0625 221.196 17.3003C222.487 19.5382 223.348 21.776 223.951 23.9278ZM202.949 32.5349V32.0185C202.949 21.6039 193.998 16.4396 176.181 16.4396H21.2531V48.1999H176.181C193.998 48.1999 202.949 43.0356 202.949 32.5349Z" fill="black"/>
+                <path d="M460.495 27.9731C466.004 30.8135 468.758 35.2892 468.758 41.4002V42.5192C468.758 44.757 468.5 46.8227 467.897 48.5442C467.381 50.3516 466.262 52.1591 464.627 53.9666C462.991 55.8602 460.753 57.4095 457.999 58.6145C455.159 59.9055 451.372 60.9384 446.638 61.713C441.818 62.4877 436.223 62.832 429.768 62.832H283.016C276.389 62.832 270.622 62.3155 265.716 61.2827C260.724 60.2498 256.937 59.0448 254.269 57.5816C251.6 56.1184 249.449 54.3109 247.899 52.2452C246.264 50.0934 245.231 48.1999 244.801 46.5645C244.37 44.8431 244.198 43.0356 244.198 41.142V40.2813H265.888C266.319 46.6506 271.052 49.9213 283.705 49.9213H429.165C433.297 49.9213 435.104 49.7491 437.772 49.4049C440.527 48.9745 442.592 48.5442 443.797 47.8556C445.088 47.167 445.863 46.5645 446.293 45.8759C446.724 45.1874 446.896 44.4127 446.896 43.466C446.896 42.1749 446.552 41.142 445.863 40.3674C445.174 39.5927 443.453 38.9042 440.871 38.3878C438.203 37.7853 434.416 37.441 429.51 37.3549L282.414 37.1828L277.508 37.0967C255.904 36.4942 245.059 30.6413 245.059 19.2799V18.5914C245.059 16.6117 245.317 14.8042 245.834 13.0828C246.35 11.4475 247.469 9.81211 249.104 8.17676C250.654 6.45534 252.805 5.0782 255.388 3.95927C257.97 2.84035 261.499 1.89357 265.888 1.11893C270.278 0.430356 275.442 0 281.209 0H427.96C434.071 0 439.408 0.430356 444.056 1.205C448.703 1.89357 452.404 2.92642 455.159 4.13142C457.999 5.33641 460.237 6.79962 461.958 8.52105C463.766 10.2425 464.971 11.9639 465.573 13.6853C466.262 15.4067 466.606 17.2142 466.606 19.1939V20.0546H445.002C444.83 19.366 444.658 18.8496 444.486 18.3332C444.228 17.9028 443.797 17.3003 443.023 16.5257C442.248 15.751 441.215 15.1485 439.924 14.6321C438.719 14.1157 436.826 13.6853 434.416 13.341C431.92 12.9107 430.026 12.7385 426.755 12.7385H283.016C278.024 12.7385 274.926 13.0828 272.257 13.5992C269.503 14.2017 267.954 14.8042 267.351 15.4067C266.749 16.0092 266.491 16.87 266.491 17.9889C266.491 19.0217 266.835 19.8824 267.437 20.4849C268.04 21.1735 269.589 21.776 271.913 22.2924C274.237 22.8949 277.594 23.1531 281.897 23.2392H427.358L433.641 23.4114C446.035 23.5835 454.987 25.1328 460.495 27.9731Z" fill="black"/>
+            </svg>    
+        </div>
+        <div class="bottom">
+            <svg width="469" height="64" viewBox="0 0 469 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M245.231 39.8789C244.629 37.7271 244.37 35.4892 244.37 32.9932L244.37 30.5832C244.37 27.6568 244.715 24.9025 245.489 22.4064C246.178 19.9104 247.555 17.2421 249.707 14.4879C251.859 11.8197 254.527 9.49574 257.884 7.5161C261.24 5.62253 265.802 4.07325 271.483 2.78218C277.25 1.57718 283.877 0.974687 291.279 0.974686L468.758 0.97467L468.758 61.827L291.451 61.827C285.168 61.827 279.574 61.3967 274.581 60.622C269.589 59.9335 265.372 58.8145 262.015 57.3513C258.658 55.8881 255.818 54.2528 253.408 52.5313C250.998 50.7238 249.19 48.7442 247.985 46.5064C246.694 44.2685 245.834 42.0306 245.231 39.8789ZM266.233 31.2717L266.233 31.7882C266.233 42.2028 275.184 47.3671 293.001 47.3671L447.929 47.367L447.929 15.6068L293.001 15.6068C275.184 15.6068 266.233 20.7711 266.233 31.2717Z" fill="black"/>
+                <path d="M8.68672 35.8335C3.17817 32.9932 0.423882 28.5175 0.423881 22.4064L0.423881 21.2875C0.423881 19.0497 0.682093 16.984 1.28459 15.2625C1.80102 13.455 2.91996 11.6475 4.55531 9.84004C6.19065 7.94648 8.42849 6.3972 11.1828 5.1922C14.0231 3.90113 17.8102 2.86828 22.5442 2.09364C27.3642 1.31899 32.9588 0.974709 39.4141 0.974708L186.166 0.974695C192.793 0.974695 198.56 1.49112 203.466 2.52397C208.458 3.55683 212.245 4.76183 214.913 6.22504C217.582 7.68825 219.733 9.49574 221.283 11.5614C222.918 13.7132 223.951 15.6068 224.381 17.2421C224.811 18.9636 224.984 20.7711 224.984 22.6646L224.984 23.5253L203.294 23.5253C202.863 17.1561 198.129 13.8854 185.477 13.8854L40.0166 13.8854C35.8852 13.8854 34.0777 14.0575 31.4095 14.4018C28.6553 14.8322 26.5895 15.2625 25.3845 15.9511C24.0935 16.6397 23.3188 17.2422 22.8885 17.9307C22.4581 18.6193 22.286 19.3939 22.286 20.3407C22.286 21.6318 22.6303 22.6646 23.3188 23.4393C24.0074 24.2139 25.7288 24.9025 28.3109 25.4189C30.9791 26.0214 34.7663 26.3657 39.6723 26.4518L186.768 26.6239L191.674 26.71C213.278 27.3125 224.123 33.1653 224.123 44.5267L224.123 45.2153C224.123 47.1949 223.865 49.0024 223.348 50.7238C222.832 52.3592 221.713 53.9945 220.078 55.6299C218.528 57.3513 216.377 58.7285 213.794 59.8474C211.212 60.9663 207.683 61.9131 203.294 62.6877C198.904 63.3763 193.74 63.8067 187.973 63.8067L41.2216 63.8067C35.1106 63.8067 29.7742 63.3763 25.1263 62.6017C20.4785 61.9131 16.7774 60.8803 14.0231 59.6753C11.1828 58.4703 8.94493 57.0071 7.22351 55.2856C5.41602 53.5642 4.21101 51.8428 3.60851 50.1214C2.91995 48.3999 2.57567 46.5924 2.57567 44.6128L2.57567 43.7521L24.1795 43.7521C24.3517 44.4407 24.5238 44.9571 24.696 45.4735C24.9542 45.9039 25.3845 46.5064 26.1592 47.281C26.9338 48.0557 27.9666 48.6581 29.2577 49.1746C30.4627 49.691 32.3563 50.1214 34.7663 50.4656C37.2623 50.896 39.1559 51.0681 42.4266 51.0681L186.166 51.0681C191.158 51.0681 194.256 50.7238 196.924 50.2074C199.679 49.6049 201.228 49.0024 201.83 48.3999C202.433 47.7974 202.691 46.9367 202.691 45.8178C202.691 44.7849 202.347 43.9242 201.744 43.3217C201.142 42.6332 199.593 42.0307 197.269 41.5142C194.945 40.9117 191.588 40.6535 187.284 40.5674L41.8241 40.5675L35.5409 40.3953C23.1467 40.2232 14.1953 38.6739 8.68672 35.8335Z" fill="black"/>
+            </svg>                
+        </div>
+    </div>
+    <script>
+const CONFIG = {
+    // Particle Settings
+    PARTICLE_COUNT: 3000,      // Increased particle count for more detail
+    MAX_PARTICLE_SIZE: 5,      // Slightly larger max particle size
+    
+    // Invert Effect Configuration
+    ENABLE_INVERT_EFFECT: true,// Toggle for keyboard-triggered invert effect
+    INVERT_DURATION: 2,       // How long the invert effect lasts
+    
+    // Visual Transformation Settings
+    TRANSFORM_DURATION: 110,   // Extended transformation duration
+    TRANSFORM_COOLDOWN: 70,   // Longer cooldown between transformations
+    
+    // 3D-like Effect Parameters
+    USE_3D_SIMULATION: true,   // Enable 3D-like particle movement
+    DEPTH_VARIATION: 60       // Depth variation for 3D-like effect
+};
+
+class SonicCanvas {
+    constructor() {
+        this.centerX = width / 2;
+        this.centerY = height / 2;
+        
+        this.entities = [];
+        
+        this.transformStates = [
+            this.createWaveFront,         // Radial wave expansion
+            this.createVortexCollapse,    // Spiraling inward movement
+            this.createLayeredPulse,      // Rhythmic breathing effect
+            this.createGeometricWarp,     // Mathematical particle distortion
+            this.createSilenceEmanation   // Subtle movement during quiet moments
+        ];
+        
+        this.currentTransform = null;
+        this.transformCooldown = 0;
+        this.transformDuration = 0;
+        
+        // Invert effect tracking
+        this.invertIntensity = 0;
+        this.invertDuration = 0;
+    }
+
+    initialize() {
+        for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
+            this.entities.push(new VisualEntity(this.centerX, this.centerY));
+        }
+    }
+
+    update(audioFeatures) {
+        // Manually triggered invert effect
+        if (this.invertDuration > 0) {
+            this.invertDuration--;
+        }
+
+        // Audio-reactive transformation
+        if (this.transformCooldown <= 0 && audioFeatures.intensity > 0.6) {
+            this.triggerTransformation(audioFeatures);
+        }
+
+        // Update each particle with more complex movement
+        this.entities.forEach(entity => {
+            if (this.currentTransform) {
+                this.currentTransform(entity, audioFeatures);
+            } else {
+                entity.defaultBehavior(audioFeatures);
+            }
+        });
+
+        this.manageTransformStates();
+    }
+
+    manageTransformStates() {
+        if (this.transformDuration > 0) {
+            this.transformDuration--;
+        } else if (this.currentTransform) {
+            this.currentTransform = null;
+            this.transformCooldown = CONFIG.TRANSFORM_COOLDOWN;
+        }
+
+        if (this.transformCooldown > 0) this.transformCooldown--;
+    }
+
+    triggerTransformation(audioFeatures) {
+        this.currentTransform = random(this.transformStates);
+        this.transformDuration = CONFIG.TRANSFORM_DURATION;
+    }
+
+    // Transformation State 1: Wave Front Propagation
+    createWaveFront(entity, audioFeatures) {
+        let angle = atan2(entity.y - this.centerY, entity.x - this.centerX);
+        let distance = dist(entity.x, entity.y, this.centerX, this.centerY);
+        
+        // Controlled radial expansion
+        entity.x = this.centerX + cos(angle) * (distance + audioFeatures.intensity * 50);
+        entity.y = this.centerY + sin(angle) * (distance + audioFeatures.intensity * 50);
+        
+        // Ensure particles stay on screen
+        entity.x = constrain(entity.x, 0, width);
+        entity.y = constrain(entity.y, 0, height);
+        
+        // Dynamic sizing based on audio intensity
+        entity.size = map(audioFeatures.intensity, 0, 1, 1, CONFIG.MAX_PARTICLE_SIZE);
+    }
+
+    // Transformation State 2: Vortex Collapse
+    createVortexCollapse(entity, audioFeatures) {
+        let angle = atan2(entity.y - this.centerY, entity.x - this.centerX);
+        let distance = dist(entity.x, entity.y, this.centerX, this.centerY);
+        
+        // Spiraling inward movement
+        entity.x = this.centerX + cos(angle + frameCount * 0.09) * (distance * 0.95);
+        entity.y = this.centerY + sin(angle + frameCount * 0.09) * (distance * 0.95);
+        
+        // Screen boundary protection
+        entity.x = constrain(entity.x, 0, width);
+        entity.y = constrain(entity.y, 0, height);
+        
+        // Size variation based on distance
+        entity.size = map(distance, 0, width/2, CONFIG.MAX_PARTICLE_SIZE, 1);
+    }
+
+    // Transformation State 3: Layered Pulse
+    createLayeredPulse(entity, audioFeatures) {
+        let distanceFromCenter = dist(entity.x, entity.y, this.centerX, this.centerY);
+        let angle = atan2(entity.y - this.centerY, entity.x - this.centerX);
+        
+        // Rhythmic expansion and contraction
+        let pulseIntensity = sin(frameCount * 0.1) * audioFeatures.intensity * 50;
+        entity.x = this.centerX + cos(angle) * (distanceFromCenter + pulseIntensity);
+        entity.y = this.centerY + sin(angle) * (distanceFromCenter + pulseIntensity);
+        
+        // Screen boundary control
+        entity.x = constrain(entity.x, 0, width);
+        entity.y = constrain(entity.y, 0, height);
+        
+        // Dynamic opacity and size
+        entity.opacity = map(abs(pulseIntensity), 0, 50, 100, 255);
+        entity.size = map(abs(pulseIntensity), 0, 50, 1, CONFIG.MAX_PARTICLE_SIZE);
+    }
+
+    // Transformation State 4: Geometric Warp
+    createGeometricWarp(entity, audioFeatures) {
+        let angle = atan2(entity.y - this.centerY, entity.x - this.centerX);
+        let distance = dist(entity.x, entity.y, this.centerX, this.centerY);
+        
+        // Complex geometric distortion
+        entity.x = this.centerX + cos(angle * 3) * (distance + audioFeatures.intensity * 30);
+        entity.y = this.centerY + sin(angle * 2) * (distance + audioFeatures.intensity * 30);
+        
+        // Maintain screen boundaries
+        entity.x = constrain(entity.x, 0, width);
+        entity.y = constrain(entity.y, 0, height);
+        
+        // Size variation
+        entity.size = map(distance, 0, width/2, 2, CONFIG.MAX_PARTICLE_SIZE);
+    }
+
+    // Transformation State 5: Silence Emanation
+    createSilenceEmanation(entity, audioFeatures) {
+        let distanceFromCenter = dist(entity.x, entity.y, this.centerX, this.centerY);
+        let angle = atan2(entity.y - this.centerY, entity.x - this.centerX);
+        
+        // Gentle oscillation during quiet moments
+        let breatheFactor = sin(frameCount * 0.05) * (1 - audioFeatures.intensity) * 30;
+        entity.x = this.centerX + cos(angle) * (distanceFromCenter + breatheFactor);
+        entity.y = this.centerY + sin(angle) * (distanceFromCenter + breatheFactor);
+        
+        // Constrain to screen
+        entity.x = constrain(entity.x, 0, width);
+        entity.y = constrain(entity.y, 0, height);
+        
+        // Opacity and size reflection of silence
+        entity.opacity = map(audioFeatures.intensity, 0, 0.2, 50, 255);
+        entity.size = map(audioFeatures.intensity, 0, 0.2, 0.5, CONFIG.MAX_PARTICLE_SIZE);
+    }
+
+    // Render method with invert effect
+    render() {
+        // Invert effect: black becomes white, white becomes black
+        if (this.invertDuration > 0) {
+            filter(INVERT);
+        }
+
+        // Render particles with added depth simulation if enabled
+        this.entities.forEach(entity => entity.display());
+    }
+
+    // Method to trigger invert effect
+    triggerInvertEffect() {
+        if (CONFIG.ENABLE_INVERT_EFFECT) {
+            this.invertDuration = CONFIG.INVERT_DURATION;
+        }
+    }
+}
+
+// Enhanced Visual Entity with 3D-like simulation
+class VisualEntity {
+    constructor(centerX, centerY) {
+        // More complex initial positioning with depth simulation
+        let angle = random(TWO_PI);
+        let radius = random(50, min(width, height) / 2);
+        let depth = CONFIG.USE_3D_SIMULATION ? random(-CONFIG.DEPTH_VARIATION, CONFIG.DEPTH_VARIATION) : 0;
+        
+        this.x = centerX + cos(angle) * radius;
+        this.y = centerY + sin(angle) * radius;
+        this.z = depth;  // Added depth dimension
+        
+        // More dynamic initial characteristics
+        this.size = random(1, CONFIG.MAX_PARTICLE_SIZE);
+        this.opacity = 255;
+        this.rotationSpeed = random(-0.05, 0.05);
+    }
+
+    // Enhanced default behavior with 3D-like movement
+    defaultBehavior(audioFeatures) {
+        let centerX = width / 2;
+        let centerY = height / 2;
+        
+        let angle = atan2(this.y - centerY, this.x - centerX);
+        let distance = dist(this.x, this.y, centerX, centerY);
+        
+        // More complex movement simulation
+        this.x += cos(angle + frameCount * 0.02) * audioFeatures.intensity;
+        this.y += sin(angle + frameCount * 0.02) * audioFeatures.intensity;
+        
+        // 3D-like depth variation
+        if (CONFIG.USE_3D_SIMULATION) {
+            this.z += sin(frameCount * 0.01) * audioFeatures.intensity;
+            this.z = constrain(this.z, -CONFIG.DEPTH_VARIATION, CONFIG.DEPTH_VARIATION);
+        }
+        
+        // Maintain screen boundaries
+        this.x = constrain(this.x, 0, width);
+        this.y = constrain(this.y, 0, height);
+    }
+
+    // Enhanced display method with depth simulation
+    display() {
+        // Adjust opacity and size based on simulated depth
+        let depthFactor = CONFIG.USE_3D_SIMULATION 
+            ? map(abs(this.z), 0, CONFIG.DEPTH_VARIATION, 1, 0.3) 
+            : 1;
+        
+        stroke(255, this.opacity * depthFactor);
+        strokeWeight(this.size * depthFactor);
+        point(this.x, this.y);
+    }
+}
+
+// Global Variables
+let sonicCanvas;
+let song;
+let analyzer;
+let fft;
+let audioFeatures = {
+    intensity: 0,
+    bass: 0,
+    mid: 0,
+    treble: 0
+};
+
+// Preload audio file
+function preload() {
+    song = loadSound('media/toldyou.mp3');
+}
+
+// Initial setup
+function setup() {
+    frameRate(30); 
+    createCanvas(windowWidth, windowHeight);
+    
+    // Audio analysis setup
+    analyzer = new p5.Amplitude();
+    fft = new p5.FFT(0.8, 256);
+    song.connect(analyzer);
+    song.connect(fft);
+
+    // Initialize the sonic canvas
+    sonicCanvas = new SonicCanvas();
+    sonicCanvas.initialize();
+}
+
+// Main drawing loop
+function draw() {
+    // Slight trailing effect background
+    background(0, 20);
+    
+    // Analyze audio characteristics
+    let spectrum = fft.analyze();
+    audioFeatures.intensity = analyzer.getLevel();
+    audioFeatures.bass = fft.getEnergy("bass") / 255;
+    audioFeatures.mid = fft.getEnergy("mid") / 255;
+    audioFeatures.treble = fft.getEnergy("treble") / 255;
+
+    // Update and render visualization
+    sonicCanvas.update(audioFeatures);
+    sonicCanvas.render();
+}
+
+// Music and effect control
+function mousePressed() {
+    if (!song.isPlaying()) {
+        song.loop();
+    } else {
+        song.pause();
+    }
+}
+
+// Keyboard input for invert effect
+function keyPressed() {
+    if (key === 'd' || key === 'D') {
+        sonicCanvas.triggerInvertEffect();
+    }
+}
+
+// Handle window resizing
+function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+}
+    </script>
+</body>
+</html>
