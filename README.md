@@ -1,2 +1,0 @@
-# viz
-Audio Visualizer trials
