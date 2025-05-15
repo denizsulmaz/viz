@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floralis | Audio-Reactive Fibonacci Flower Visualization</title>
+    <meta name="developer" content="Deniz Sulmaz">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-family: sans-serif;
+            font-size: 14px;
+            pointer-events: none;
+            transition: opacity 1s;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">Click to pause/resume</div>
+    <script>
+        let sound;
+        let fft;
+        let particles = [];
+        let goldenRatio = 1.618033988749895;
+        let phi = (1 + Math.sqrt(5)) / 2;
+        let animationState = 0; // Controls which flower is shown
+        let transitionProgress = 0;
+        let isPlaying = true;
+        let bassBeatDetector;
+        let midBeatDetector;
+        let trebleBeatDetector;
+        let lastBeatTime = 0;
+        let beatIntensity = 0;
+        let audioLoaded = false;
+        let instructionsElement;
+        let showInstructions = true;
+
+        // Flower definitions
+        const flowers = [
+            { name: "rose", petalCount: 7, petalSize: 1.2, complexity: 0.7 },
+            { name: "lily", petalCount: 6, petalSize: 1.5, complexity: 0.8 },
+            { name: "carnation", petalCount: 8, petalSize: 0.9, complexity: 0.5 },
+            { name: "sunflower", petalCount: 11, petalSize: 0.7, complexity: 0.8 },
+            { name: "orchid", petalCount: 3, petalSize: 1.6, complexity: 0.99 }
+        ];
+
+        // Preload audio
+        function preload() {
+            sound = loadSound('bahrain.wav', 
+                () => { audioLoaded = true; },
+                () => { console.error("Error loading sound"); }
+            );
+        }
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+            background(0);
+            
+            instructionsElement = document.getElementById('instructions');
+            
+            // Setup audio analysis
+            fft = new p5.FFT(0.8, 1024);
+            
+            // Setup beat detection for different frequency ranges
+            bassBeatDetector = new BeatDetector(60, 150, 0.15, 0.4);
+            midBeatDetector = new BeatDetector(150, 2000, 0.1, 0.3);
+            trebleBeatDetector = new BeatDetector(2000, 14000, 0.08, 0.25);
+            
+            // Create initial particles
+            createParticles();
+            
+            // Try to start audio after user interaction
+            document.addEventListener('click', togglePlay);
+            
+            // Fade out instructions after 3 seconds
+            setTimeout(() => {
+                instructionsElement.style.opacity = "0";
+                setTimeout(() => {
+                    showInstructions = false;
+                }, 1000);
+            }, 3000);
+        }
+
+        function togglePlay() {
+            if (audioLoaded) {
+                if (isPlaying) {
+                    sound.pause();
+                    isPlaying = false;
+                } else {
+                    sound.play();
+                    isPlaying = true;
+                }
+            } else if (!sound.isPlaying()) {
+                sound.play();
+                isPlaying = true;
+            }
+        }
+
+        function createParticles() {
+            particles = [];
+            const particleCount = 700; // Adjust based on performance
+            
+            for (let i = 0; i < particleCount; i++) {
+                const angle = i * goldenRatio * TWO_PI;
+                const radius = sqrt(i) * 10 % (min(width, height) * 0.4);
+                
+                particles.push({
+                    position: createVector(
+                        width / 2 + cos(angle) * radius,
+                        height / 2 + sin(angle) * radius
+                    ),
+                    targetPosition: createVector(
+                        width / 2 + cos(angle) * radius,
+                        height / 2 + sin(angle) * radius
+                    ),
+                    originalPosition: createVector(
+                        width / 2 + cos(angle) * radius,
+                        height / 2 + sin(angle) * radius
+                    ),
+                    velocity: createVector(0, 0),
+                    size: random(2, 5),
+                    baseSize: random(2, 5),
+                    angle: angle,
+                    radius: radius,
+                    spiralFactor: random(0.8, 1.2),
+                    phaseOffset: random(TWO_PI),
+                    speedFactor: random(0.5, 1.5),
+                    opacity: random(150, 255)
+                });
+            }
+        }
+
+        function calculateFlowerPosition(angle, currentFlower, morphProgress = 0, nextFlower = null) {
+            let flowerParams = currentFlower;
+            
+            // If we're morphing between flowers, interpolate the parameters
+            if (nextFlower && morphProgress > 0) {
+                flowerParams = {
+                    petalCount: lerp(currentFlower.petalCount, nextFlower.petalCount, morphProgress),
+                    petalSize: lerp(currentFlower.petalSize, nextFlower.petalSize, morphProgress),
+                    complexity: lerp(currentFlower.complexity, nextFlower.complexity, morphProgress)
+                };
+            }
+            
+            // Rose curve formula with modifications
+            let k = flowerParams.petalCount;
+            let r = cos(k * angle) * flowerParams.petalSize;
+            
+            // Add complexity with additional harmonic terms
+            if (flowerParams.complexity > 0) {
+                r += cos(k * 2 * angle) * flowerParams.complexity * 0.5;
+                r += sin(k * angle / 2) * flowerParams.complexity * 0.3;
+            }
+            
+            return r;
+        }
+
+        function updateParticlePositions(morphProgress = 0) {
+            const currentFlower = flowers[Math.floor(animationState) % flowers.length];
+            const nextFlower = flowers[Math.ceil(animationState) % flowers.length];
+            
+            let energyFactor = map(beatIntensity, 0, 1, 1, 1.5);
+            let spectrum = fft.analyze();
+            
+            let spectrumSum = 0;
+            for (let i = 0; i < spectrum.length; i++) {
+                spectrumSum += spectrum[i];
+            }
+            let averageEnergy = spectrumSum / spectrum.length / 255;
+            
+            // Update the target positions based on current animation state
+            for (let i = 0; i < particles.length; i++) {
+                let p = particles[i];
+                
+                // Get frequency data for this particle
+                let freqIndex = floor(map(i % 100, 0, 100, 0, spectrum.length - 1));
+                let freq = map(spectrum[freqIndex], 0, 255, 0.5, 1.5);
+                
+                // Base angle from golden angle distribution
+                let angle = p.angle + frameCount * 0.002 * p.speedFactor;
+                
+                // Calculate flower radius at this angle
+                let r = calculateFlowerPosition(angle, currentFlower, morphProgress, nextFlower);
+                
+                // Scale based on audio and animation
+                let scale = map(sin(frameCount * 0.02 + p.phaseOffset), -1, 1, 0.8, 1.2);
+                scale *= freq * energyFactor;
+                
+                // Apply the Fibonacci distribution with the flower shape
+                let baseRadius = p.radius * scale;
+                let flowerRadius = r * min(width, height) * 0.35;
+                
+                // Blend between Fibonacci spiral and flower shape based on animation
+                let blendFactor = sin(frameCount * 0.01) * 0.5 + 0.5; // Oscillates between 0 and 1
+                let finalRadius = lerp(baseRadius, flowerRadius, blendFactor);
+                
+                // Calculate the target position
+                p.targetPosition.x = width / 2 + cos(angle) * finalRadius;
+                p.targetPosition.y = height / 2 + sin(angle) * finalRadius;
+                
+                // Add some chaotic movement based on audio energy
+                if (beatIntensity > 0.6) {
+                    p.targetPosition.x += random(-30, 30) * beatIntensity;
+                    p.targetPosition.y += random(-30, 30) * beatIntensity;
+                }
+                
+                // Adjust particle size based on audio
+                p.size = p.baseSize * (1 + freq * beatIntensity);
+                
+                // Update opacity based on energy and position
+                p.opacity = map(averageEnergy, 0, 1, 100, 255);
+                p.opacity *= map(dist(p.position.x, p.position.y, width/2, height/2), 
+                                0, min(width, height) * 0.5, 1, 0.7);
+            }
+        }
+
+        function draw() {
+            // Clear the background with a fade effect
+            background(0, 10);
+            
+            if (!audioLoaded) {
+                fill(255);
+                textAlign(CENTER, CENTER);
+                text("Loading audio...", width/2, height/2);
+                return;
+            }
+            
+            // Process audio if playing
+            if (sound.isPlaying()) {
+                fft.analyze();
+                let spectrum = fft.analyze();
+                let bass = fft.getEnergy("bass");
+                let mid = fft.getEnergy("mid");
+                let treble = fft.getEnergy("treble");
+                
+                // Update beat detectors
+                let bassBeating = bassBeatDetector.detect(bass);
+                let midBeating = midBeatDetector.detect(mid);
+                let trebleBeating = trebleBeatDetector.detect(treble);
+                
+                // Set beat intensity based on detected beats
+                if (bassBeating || midBeating || trebleBeating) {
+                    lastBeatTime = millis();
+                    beatIntensity = 1.0;
+                    
+                    // Trigger flower change on strong bass beat
+                    if (bassBeating && bass > 200) {
+                        animationState = (animationState + 1) % flowers.length;
+                        transitionProgress = 0;
+                    }
+                } else {
+                    // Decay beat intensity over time
+                    let timeSinceBeat = millis() - lastBeatTime;
+                    beatIntensity = max(0, 1 - timeSinceBeat / 500);
+                }
+                
+                // Progress transition between flowers
+                if (transitionProgress < 1) {
+                    transitionProgress += 0.02;
+                    if (transitionProgress > 1) transitionProgress = 1;
+                }
+            }
+            
+            // Update particle positions
+            updateParticlePositions(transitionProgress);
+            
+            // Draw particles
+            noStroke();
+            for (let i = 0; i < particles.length; i++) {
+                let p = particles[i];
+                
+                // Apply smooth movement with some easing
+                let ease = 0.1;
+                p.velocity.x = (p.targetPosition.x - p.position.x) * ease;
+                p.velocity.y = (p.targetPosition.y - p.position.y) * ease;
+                p.position.add(p.velocity);
+                
+                // Draw the particle
+                fill(255, p.opacity);
+                circle(p.position.x, p.position.y, p.size);
+            }
+            
+            // Subtle glow effect during beats
+            if (beatIntensity > 0.5) {
+                drawingContext.shadowBlur = 10 * beatIntensity;
+                drawingContext.shadowColor = 'rgba(255,255,255,0.2)';
+            } else {
+                drawingContext.shadowBlur = 0;
+            }
+            
+            // Draw subtle Fibonacci spiral guides during strong beats
+            if (beatIntensity > 0.7) {
+                stroke(255, 30 * beatIntensity);
+                noFill();
+                let a = 0;
+                let b = 1;
+                let maxRadius = min(width, height) * 0.4;
+                beginShape();
+                for (let i = 0; i < 20; i++) {
+                    let next = a + b;
+                    a = b;
+                    b = next;
+                    let radius = sqrt(b) * 5;
+                    if (radius > maxRadius) break;
+                    let angle = i * 137.5 * PI / 180;
+                    let x = width/2 + cos(angle) * radius;
+                    let y = height/2 + sin(angle) * radius;
+                    curveVertex(x, y);
+                }
+                endShape();
+            }
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+            createParticles();
+        }
+
+        // Beat detection helper class
+        class BeatDetector {
+            constructor(freqLow, freqHigh, threshold, decayRate) {
+                this.freqLow = freqLow;
+                this.freqHigh = freqHigh;
+                this.threshold = threshold;
+                this.decayRate = decayRate;
+                this.energy = 0;
+                this.lastEnergy = 0;
+            }
+            
+            detect(currentEnergy) {
+                // Normalize energy to 0-1
+                currentEnergy = map(currentEnergy, 0, 255, 0, 1);
+                
+                // Compute running average for smoothing
+                this.energy = this.energy * (1 - this.decayRate) + currentEnergy * this.decayRate;
+                
+                // Beat is detected when current energy is significantly higher than running average
+                let beat = this.energy > this.lastEnergy * (1 + this.threshold) && this.energy > 0.2;
+                
+                this.lastEnergy = this.energy;
+                
+                return beat;
+            }
+        }
+    </script>
+</body>
+</html>
