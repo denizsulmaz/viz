@@ -27,17 +27,29 @@
             pointer-events: none;
             transition: opacity 1s;
         }
+        #current-shape {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-family: sans-serif;
+            font-size: 14px;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
     </style>
 </head>
 <body>
     <div id="instructions">Click to pause/resume</div>
+    <div id="current-shape">Current: Flower</div>
     <script>
         let sound;
         let fft;
         let particles = [];
         let goldenRatio = 1.618033988749895;
         let phi = (1 + Math.sqrt(5)) / 2;
-        let animationState = 0; // Controls which flower is shown
+        let shapeState = 0; // Controls which shape is shown: 0=flower, 1=sphere, 2=grid
+        let flowerState = 0; // Controls which flower within flower shapes
         let transitionProgress = 0;
         let isPlaying = true;
         let bassBeatDetector;
@@ -47,7 +59,17 @@
         let beatIntensity = 0;
         let audioLoaded = false;
         let instructionsElement;
+        let currentShapeElement;
         let showInstructions = true;
+        let shapeTransitionSpeed = 0.05;
+        let shapeNames = ["Flower", "3D Sphere", "Grid"];
+        let lastShapeChange = 0;
+        let shapeCooldown = 1500; // Reduced cooldown time between shape changes (was 2000ms)
+        let rotationX = 0;
+        let rotationY = 0;
+        let sphereRadius = 0;
+        let zOffset = 0;
+        let timeInCurrentShape = 0; // Track how long we've been in current shape
 
         // Flower definitions
         const flowers = [
@@ -71,6 +93,7 @@
             background(0);
             
             instructionsElement = document.getElementById('instructions');
+            currentShapeElement = document.getElementById('current-shape');
             
             // Setup audio analysis
             fft = new p5.FFT(0.8, 1024);
@@ -93,6 +116,13 @@
                     showInstructions = false;
                 }, 1000);
             }, 3000);
+            
+            // Initialize sphere radius
+            sphereRadius = min(width, height) * 0.3;
+            
+            // Initialize shape state to flower (0)
+            shapeState = 0;
+            currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
         }
 
         function togglePlay() {
@@ -139,7 +169,13 @@
                     spiralFactor: random(0.8, 1.2),
                     phaseOffset: random(TWO_PI),
                     speedFactor: random(0.5, 1.5),
-                    opacity: random(150, 255)
+                    opacity: random(150, 255),
+                    // 3D properties
+                    phi: random(TWO_PI),
+                    theta: random(TWO_PI),
+                    // Grid properties
+                    gridX: floor(random(20)),
+                    gridY: floor(random(20))
                 });
             }
         }
@@ -170,8 +206,8 @@
         }
 
         function updateParticlePositions(morphProgress = 0) {
-            const currentFlower = flowers[Math.floor(animationState) % flowers.length];
-            const nextFlower = flowers[Math.ceil(animationState) % flowers.length];
+            const currentFlower = flowers[Math.floor(flowerState) % flowers.length];
+            const nextFlower = flowers[Math.ceil(flowerState) % flowers.length];
             
             let energyFactor = map(beatIntensity, 0, 1, 1, 1.5);
             let spectrum = fft.analyze();
@@ -182,7 +218,24 @@
             }
             let averageEnergy = spectrumSum / spectrum.length / 255;
             
-            // Update the target positions based on current animation state
+            // Update rotation for 3D sphere based on audio
+            rotationX += 0.005 + averageEnergy * 0.03;
+            rotationY += 0.003 + averageEnergy * 0.02;
+            
+            // Pulse the sphere size with the beat
+            let pulseFactor = map(beatIntensity, 0, 1, 1, 1.3);
+            let currentSphereRadius = sphereRadius * pulseFactor;
+            
+            // Update the z-offset for 3D effect based on audio energy
+            zOffset = map(averageEnergy, 0, 1, 0, 200);
+            
+            // Grid parameters
+            let gridCols = 20;
+            let gridRows = 15;
+            let gridSpacingX = width / gridCols;
+            let gridSpacingY = height / gridRows;
+            
+            // Update the target positions based on current shape state
             for (let i = 0; i < particles.length; i++) {
                 let p = particles[i];
                 
@@ -190,40 +243,109 @@
                 let freqIndex = floor(map(i % 100, 0, 100, 0, spectrum.length - 1));
                 let freq = map(spectrum[freqIndex], 0, 255, 0.5, 1.5);
                 
-                // Base angle from golden angle distribution
-                let angle = p.angle + frameCount * 0.002 * p.speedFactor;
+                // Base shape position calculation
+                if (shapeState < 1) {
+                    // FLOWER SHAPE
+                    // Base angle from golden angle distribution
+                    let angle = p.angle + frameCount * 0.002 * p.speedFactor;
+                    
+                    // Calculate flower radius at this angle
+                    let r = calculateFlowerPosition(angle, currentFlower, morphProgress, nextFlower);
+                    
+                    // Scale based on audio and animation
+                    let scale = map(sin(frameCount * 0.02 + p.phaseOffset), -1, 1, 0.8, 1.2);
+                    scale *= freq * energyFactor;
+                    
+                    // Apply the Fibonacci distribution with the flower shape
+                    let baseRadius = p.radius * scale;
+                    let flowerRadius = r * min(width, height) * 0.35;
+                    
+                    // Blend between Fibonacci spiral and flower shape based on animation
+                    let blendFactor = sin(frameCount * 0.01) * 0.5 + 0.5; // Oscillates between 0 and 1
+                    let finalRadius = lerp(baseRadius, flowerRadius, blendFactor);
+                    
+                    // Calculate the target position
+                    p.targetPosition.x = width / 2 + cos(angle) * finalRadius;
+                    p.targetPosition.y = height / 2 + sin(angle) * finalRadius;
+                    
+                } else if (shapeState < 2) {
+                    // 3D SPHERE SHAPE
+                    // Use spherical coordinates for 3D effect
+                    let theta = p.theta + frameCount * 0.005 * p.speedFactor;
+                    let phi = p.phi + frameCount * 0.003 * p.speedFactor;
+                    
+                    // Add audio reactivity to angles
+                    theta += sin(frameCount * 0.1) * beatIntensity * 0.2;
+                    phi += cos(frameCount * 0.08) * beatIntensity * 0.1;
+                    
+                    // Calculate 3D coordinates
+                    let x = currentSphereRadius * sin(phi) * cos(theta);
+                    let y = currentSphereRadius * sin(phi) * sin(theta);
+                    let z = currentSphereRadius * cos(phi);
+                    
+                    // Apply rotation
+                    let rotatedX = x * cos(rotationY) - z * sin(rotationY);
+                    let rotatedZ = x * sin(rotationY) + z * cos(rotationY);
+                    let rotatedY = y * cos(rotationX) + rotatedZ * sin(rotationX);
+                    z = -y * sin(rotationX) + rotatedZ * cos(rotationX);
+                    
+                    // Add perspective by scaling based on z
+                    let scale = 800 / (800 + z + zOffset);
+                    
+                    // Set the target position with perspective projection
+                    p.targetPosition.x = width / 2 + rotatedX * scale;
+                    p.targetPosition.y = height / 2 + rotatedY * scale;
+                    
+                    // Modify opacity based on z-position for depth effect
+                    p.opacity = map(z, -currentSphereRadius, currentSphereRadius, 100, 255) * scale;
+                    
+                } else {
+                    // GRID PATTERN
+                    // Choose grid cell for this particle
+                    let gridCols = 20;
+                    let gridRows = 15;
+                    let gridSpacingX = width / gridCols;
+                    let gridSpacingY = height / gridRows;
+                    
+                    let row = (p.gridY + floor(frameCount * 0.01 * p.speedFactor)) % gridRows;
+                    let col = (p.gridX + floor(frameCount * 0.008 * p.speedFactor)) % gridCols;
+                    
+                    // Add some audio reactivity to the grid
+                    let offsetX = sin(frameCount * 0.05 + row * 0.2) * beatIntensity * 30;
+                    let offsetY = cos(frameCount * 0.04 + col * 0.2) * beatIntensity * 30;
+                    
+                    // Calculate base grid position
+                    let baseX = gridSpacingX * col + gridSpacingX/2;
+                    let baseY = gridSpacingY * row + gridSpacingY/2;
+                    
+                    // Apply audio reactive movement
+                    baseX += offsetX;
+                    baseY += offsetY;
+                    
+                    // Add some randomness for each particle
+                    baseX += random(-8, 8) * beatIntensity;
+                    baseY += random(-8, 8) * beatIntensity;
+                    
+                    // Set target position
+                    p.targetPosition.x = baseX;
+                    p.targetPosition.y = baseY;
+                    
+                    // Apply a slight pulsing effect to particles in grid mode
+                    p.size = p.baseSize * (1 + sin(frameCount * 0.1 + p.phaseOffset) * 0.5 + freq * beatIntensity * 0.8);
+                }
                 
-                // Calculate flower radius at this angle
-                let r = calculateFlowerPosition(angle, currentFlower, morphProgress, nextFlower);
-                
-                // Scale based on audio and animation
-                let scale = map(sin(frameCount * 0.02 + p.phaseOffset), -1, 1, 0.8, 1.2);
-                scale *= freq * energyFactor;
-                
-                // Apply the Fibonacci distribution with the flower shape
-                let baseRadius = p.radius * scale;
-                let flowerRadius = r * min(width, height) * 0.35;
-                
-                // Blend between Fibonacci spiral and flower shape based on animation
-                let blendFactor = sin(frameCount * 0.01) * 0.5 + 0.5; // Oscillates between 0 and 1
-                let finalRadius = lerp(baseRadius, flowerRadius, blendFactor);
-                
-                // Calculate the target position
-                p.targetPosition.x = width / 2 + cos(angle) * finalRadius;
-                p.targetPosition.y = height / 2 + sin(angle) * finalRadius;
-                
-                // Add some chaotic movement based on audio energy
-                if (beatIntensity > 0.6) {
-                    p.targetPosition.x += random(-30, 30) * beatIntensity;
-                    p.targetPosition.y += random(-30, 30) * beatIntensity;
+                // Add some chaotic movement based on audio energy during transitions
+                if (transitionProgress > 0 && transitionProgress < 1 && beatIntensity > 0.5) {
+                    p.targetPosition.x += random(-40, 40) * beatIntensity * 0.5;
+                    p.targetPosition.y += random(-40, 40) * beatIntensity * 0.5;
                 }
                 
                 // Adjust particle size based on audio
                 p.size = p.baseSize * (1 + freq * beatIntensity);
                 
                 // Update opacity based on energy and position
-                p.opacity = map(averageEnergy, 0, 1, 100, 255);
-                p.opacity *= map(dist(p.position.x, p.position.y, width/2, height/2), 
+                let baseOpacity = map(averageEnergy, 0, 1, 100, 255);
+                p.opacity = baseOpacity * map(dist(p.position.x, p.position.y, width/2, height/2), 
                                 0, min(width, height) * 0.5, 1, 0.7);
             }
         }
@@ -252,25 +374,111 @@
                 let midBeating = midBeatDetector.detect(mid);
                 let trebleBeating = trebleBeatDetector.detect(treble);
                 
+                // Increment time in current shape
+                timeInCurrentShape += deltaTime;
+                
                 // Set beat intensity based on detected beats
                 if (bassBeating || midBeating || trebleBeating) {
                     lastBeatTime = millis();
                     beatIntensity = 1.0;
                     
-                    // Trigger flower change on strong bass beat
-                    if (bassBeating && bass > 200) {
-                        animationState = (animationState + 1) % flowers.length;
+                    // More frequent shape changes based on beats
+                    let currentTime = millis();
+                    let timeSinceLastShapeChange = currentTime - lastShapeChange;
+                    
+                    // Force a shape change if we've been in grid mode too long
+                    if (shapeState === 2 && timeInCurrentShape > 8000) {  // 8 seconds max in grid
+                        shapeState = 1; // Grid → Sphere (follow the sequence)
                         transitionProgress = 0;
+                        lastShapeChange = currentTime;
+                        timeInCurrentShape = 0;
+                        currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
+                        currentShapeElement.style.opacity = "1";
                     }
+                    
+                    // Also limit time in other states for balanced viewing
+                    if ((shapeState === 0 || shapeState === 1) && timeInCurrentShape > 15000) {  // 15 seconds max in flower/sphere
+                        // Follow the sequence: flower → grid → sphere → flower
+                        shapeState = (shapeState === 0) ? 2 : 0;
+                        transitionProgress = 0;
+                        lastShapeChange = currentTime;
+                        timeInCurrentShape = 0;
+                        currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
+                        currentShapeElement.style.opacity = "1";
+                    }
+                    
+                    // Trigger shape/flower change based on beats
+                    if (bassBeating && bass > 200 && timeSinceLastShapeChange > shapeCooldown) {
+                        // Strong bass beat changes the main shape
+                        if (random() < 0.5) {  // 50% chance to change main shape (increased from 40%)
+                            let prevShape = shapeState;
+                            
+                            // Define explicit shape transition order: flower(0) → grid(2) → sphere(1)
+                            if (shapeState === 0) {
+                                shapeState = 2; // Flower → Grid
+                            } else if (shapeState === 2) {
+                                shapeState = 1; // Grid → Sphere
+                            } else {
+                                shapeState = 0; // Sphere → Flower
+                            }
+                            
+                            // Reset transition
+                            transitionProgress = 0;
+                            lastShapeChange = currentTime;
+                            timeInCurrentShape = 0; // Reset shape time counter
+                            
+                            // Update display
+                            currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
+                            currentShapeElement.style.opacity = "1";
+                            setTimeout(() => {
+                                currentShapeElement.style.opacity = "0.5";
+                            }, 1000);
+                            
+                        } else {
+                            // Otherwise, change flower type if in flower mode
+                            if (shapeState === 0) {
+                                flowerState = (flowerState + 1) % flowers.length;
+                                transitionProgress = 0;
+                                lastShapeChange = currentTime;
+                            }
+                        }
+                    }
+                    
+                    // Mid or treble beats can also trigger shape changes 
+                    if ((midBeating || trebleBeating) && timeSinceLastShapeChange > shapeCooldown/2) {
+                        if (random() < 0.3) {
+                            if (shapeState === 0) {
+                                // Change flower type if in flower mode
+                                flowerState = (flowerState + 1) % flowers.length;
+                                transitionProgress = 0;
+                            } else if (random() < 0.25) {
+                                // 25% chance to advance to next shape
+                                if (shapeState === 2) {
+                                    shapeState = 1; // Grid → Sphere
+                                } else if (shapeState === 1) {
+                                    shapeState = 0; // Sphere → Flower
+                                } else {
+                                    shapeState = 2; // Flower → Grid
+                                }
+                                transitionProgress = 0;
+                                currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
+                                currentShapeElement.style.opacity = "1";
+                                timeInCurrentShape = 0;
+                            }
+                            lastShapeChange = currentTime - shapeCooldown/2;  // Allow faster next change
+                        }
+                    }
+                    
                 } else {
                     // Decay beat intensity over time
                     let timeSinceBeat = millis() - lastBeatTime;
                     beatIntensity = max(0, 1 - timeSinceBeat / 500);
                 }
                 
-                // Progress transition between flowers
+                // Progress transition between shapes/flowers more rapidly with audio energy
+                let transitionSpeed = shapeTransitionSpeed * (1 + beatIntensity);
                 if (transitionProgress < 1) {
-                    transitionProgress += 0.02;
+                    transitionProgress += transitionSpeed;
                     if (transitionProgress > 1) transitionProgress = 1;
                 }
             }
@@ -303,7 +511,7 @@
             }
             
             // Draw subtle Fibonacci spiral guides during strong beats
-            if (beatIntensity > 0.7) {
+            if (beatIntensity > 0.7 && shapeState === 0) {
                 stroke(255, 30 * beatIntensity);
                 noFill();
                 let a = 0;
@@ -323,11 +531,40 @@
                 }
                 endShape();
             }
+            
+            // Draw subtle sphere guides during 3D sphere mode
+            if (shapeState === 1 && beatIntensity > 0.6) {
+                stroke(255, 20 * beatIntensity);
+                noFill();
+                // Draw three circles to suggest sphere
+                let circleSizes = [0.8, 0.9, 1.0];
+                for (let size of circleSizes) {
+                    ellipse(width/2, height/2, sphereRadius * 2 * size, sphereRadius * 2 * size * 0.7);
+                }
+            }
+            
+            // Draw subtle grid lines during grid mode
+            if (shapeState === 2 && beatIntensity > 0.5) {
+                stroke(255, 15 * beatIntensity);
+                let gridCols = 20;
+                let gridRows = 15;
+                let gridSpacingX = width / gridCols;
+                let gridSpacingY = height / gridRows;
+                
+                // Draw some vertical and horizontal lines
+                for (let i = 1; i < gridCols; i += 2) {
+                    line(i * gridSpacingX, 0, i * gridSpacingX, height);
+                }
+                for (let i = 1; i < gridRows; i += 2) {
+                    line(0, i * gridSpacingY, width, i * gridSpacingY);
+                }
+            }
         }
 
         function windowResized() {
             resizeCanvas(windowWidth, windowHeight);
             createParticles();
+            sphereRadius = min(width, height) * 0.3;
         }
 
         // Beat detection helper class
