@@ -62,7 +62,7 @@
         let currentShapeElement;
         let showInstructions = true;
         let shapeTransitionSpeed = 0.05;
-        let shapeNames = ["Flower", "3D Sphere", "Grid"];
+        let shapeNames = ["", "", ""];
         let lastShapeChange = 0;
         let shapeCooldown = 1500; // Reduced cooldown time between shape changes (was 2000ms)
         let rotationX = 0;
@@ -122,7 +122,7 @@
             
             // Initialize shape state to flower (0)
             shapeState = 0;
-            currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
+            currentShapeElement.textContent = "" + shapeNames[shapeState];
         }
 
         function togglePlay() {
@@ -392,8 +392,8 @@
                         transitionProgress = 0;
                         lastShapeChange = currentTime;
                         timeInCurrentShape = 0;
-                        currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
-                        currentShapeElement.style.opacity = "1";
+                        currentShapeElement.textContent = "" + shapeNames[shapeState];
+                        currentShapeElement.style.opacity = "0";
                     }
                     
                     // Also limit time in other states for balanced viewing
@@ -403,8 +403,8 @@
                         transitionProgress = 0;
                         lastShapeChange = currentTime;
                         timeInCurrentShape = 0;
-                        currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
-                        currentShapeElement.style.opacity = "1";
+                        currentShapeElement.textContent = "" + shapeNames[shapeState];
+                        currentShapeElement.style.opacity = "0";
                     }
                     
                     // Trigger shape/flower change based on beats
@@ -428,8 +428,8 @@
                             timeInCurrentShape = 0; // Reset shape time counter
                             
                             // Update display
-                            currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
-                            currentShapeElement.style.opacity = "1";
+                            currentShapeElement.textContent = "" + shapeNames[shapeState];
+                            currentShapeElement.style.opacity = "0";
                             setTimeout(() => {
                                 currentShapeElement.style.opacity = "0.5";
                             }, 1000);
@@ -461,8 +461,8 @@
                                     shapeState = 2; // Flower → Grid
                                 }
                                 transitionProgress = 0;
-                                currentShapeElement.textContent = "Current: " + shapeNames[shapeState];
-                                currentShapeElement.style.opacity = "1";
+                                currentShapeElement.textContent = "" + shapeNames[shapeState];
+                                currentShapeElement.style.opacity = "0";
                                 timeInCurrentShape = 0;
                             }
                             lastShapeChange = currentTime - shapeCooldown/2;  // Allow faster next change
