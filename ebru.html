@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Generative Ebru Audiovisualizer</title>
+    <!-- P5.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <!-- P5.sound.js library for audio processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
+    <style>
+        html, body { 
+            margin: 0; 
+            padding: 0;
+            overflow: hidden; 
+            background-color: #000; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            width: 100vw;
+            flex-direction: column; 
+            color: white; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center;
+        }
+        canvas { 
+            display: block; /* Important for fullscreen */
+        }
+        #controlsContainer { /* This container holds the key info and will be hidden */
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(10,10,10,0.85);
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            z-index: 10;
+            transition: opacity 0.5s ease-out; 
+        }
+         #statusMessage {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 20px;
+            background-color: rgba(10,10,10,0.85);
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            z-index: 10;
+            transition: opacity 0.5s ease-out; 
+            font-size: 0.9em;
+            min-height: 1.2em; 
+        }
+        #fileInput { 
+            display: none; 
+        }
+        #controlsInfo p {
+            margin: 4px 0;
+            font-size: 0.85em;
+            color: #ccc;
+        }
+        .recordButton { 
+            position: absolute; /* Positioned independently */
+            top: 20px;
+            right: 20px;
+            padding: 5px 10px;
+            font-size: 0.8em;
+            background-color: #c0392b; 
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            z-index: 20; /* Ensure it's on top */
+        }
+        .recordButton:hover {
+            background-color: #e74c3c;
+        }
+        .recordButton.recording {
+            background-color: #27ae60; 
+        }
+        .recordButton.recording:hover {
+            background-color: #2ecc71;
+        }
+
+    </style>
+</head>
+<body>
+    <!-- Container for key interaction info (will be hidden) -->
+    <div id="controlsContainer">
+        <div id="controlsInfo">
+            <p>'1': New Pattern | '2': Agitation | '3': Complexity</p>
+            <p>'4': Spectrum | '5': Pause/Resume | '6': Toggle Particles</p>
+        </div>
+    </div>
+    <!-- Record button, positioned independently -->
+    <button id="recordBtn" class="recordButton">Start Recording</button> 
+    
+    <!-- Status message (will be hidden) -->
+    <p id="statusMessage">Click anywhere to start.</p>
+    
+    <script>
+        let sound, fft, peakDetect, kickDetect; 
+        let audioLoaded = false;
+        let isPlaying = false; 
+        let isPausedBySystem = true; 
+        let userHasClicked = false; 
+        let infoHidden = false; // Flag to track if info texts are hidden
+
+        let emitters = []; 
+        let noiseZ = 0; 
+
+        let flowAgitationActive = false; 
+        let complexityMode = 1; 
+        let showSpectrum = false;
+        let particlesGloballyVisible = true; 
+        let currentMaxEmitters = 90; 
+        let particleColor; 
+
+        // Image variables
+        let eyeImg;
+        let showEyeTargetState = false; 
+        let eyeImageAlpha = 0; 
+        const EYE_FADE_SPEED = 90; 
+
+        // Recording variables
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        let recordButton;
+        let canvasStream;
+        let audioStreamDestination;
+        const FRAME_RATE = 30; 
+
+        function preload() {
+            updateStatusElement("Loading audio:..."); 
+            sound = loadSound(
+                'batonebo.wav', 
+                () => { 
+                    audioLoaded = true; 
+                    updateStatusElement("Audio loaded. Click anywhere to start.");
+                }, 
+                (err) => {
+                    console.error("Error loading sound:", err);
+                    updateStatusElement("Error loading 'batonebo.wav'. Check file path & console.");
+                    audioLoaded = false;
+                },
+                (progress) => {
+                    updateStatusElement(`Loading audio: batonebo.wav (${Math.round(progress*100)}%)`);
+                }
+            );
+
+            eyeImg = loadImage('eye.png', 
+                () => console.log("Eye image loaded successfully."), 
+                () => console.error("Failed to load eye.png. Make sure it's in the same directory.")
+            );
+        }
+
+        function setup() {
+            let p5canvas = createCanvas(windowWidth, windowHeight); 
+            pixelDensity(displayDensity()); 
+            frameRate(FRAME_RATE); 
+            particleColor = color(150, 150, 150, 50); 
+
+            fft = new p5.FFT(0.8, 64); 
+            peakDetect = new p5.PeakDetect(20, 20000, 0.35, 20); 
+            kickDetect = new p5.PeakDetect(40, 120, 0.65, 10); 
+
+            if (!audioLoaded) { 
+                updateStatusElement("Error loading audio. Please check console and refresh.");
+            } else {
+                updateStatusElement("Audio loaded. Click anywhere to start.");
+            }
+            
+            recordButton = document.getElementById('recordBtn');
+            recordButton.onclick = toggleRecording;
+            canvasStream = p5canvas.elt.captureStream(FRAME_RATE);
+
+            background(0); 
+            noLoop(); 
+        }
+        
+        function updateStatusElement(message) {
+            const el = document.getElementById('statusMessage');
+            if (el && !infoHidden) { // Only update HTML if info is not hidden
+                el.innerHTML = message;
+            } else if (infoHidden) { // If info is hidden, log to console instead
+                console.log("Status Update (UI hidden):", message);
+            }
+        }
+        
+        function hideInfoTexts() {
+            if (!infoHidden) {
+                const controlsInfoContainer = document.getElementById('controlsContainer'); // Targets the div with key info
+                const statusEl = document.getElementById('statusMessage');
+
+                if (controlsInfoContainer) {
+                    controlsInfoContainer.style.opacity = '0';
+                    setTimeout(() => {
+                        controlsInfoContainer.style.display = 'none';
+                    }, 500); 
+                }
+                if (statusEl) {
+                    statusEl.style.opacity = '0';
+                     setTimeout(() => {
+                        statusEl.style.display = 'none';
+                    }, 500);
+                }
+                infoHidden = true; 
+            }
+        }
+
+        function soundReadyAndPlaying() {
+            isPlaying = true; 
+            isPausedBySystem = false; 
+            if (sound && fft) { 
+                fft.setInput(sound); 
+                if (typeof getAudioContext === 'function' && getAudioContext()) {
+                    audioStreamDestination = getAudioContext().createMediaStreamDestination();
+                    if (sound.output && sound.output.connect) { 
+                        sound.output.connect(audioStreamDestination);
+                    } else {
+                        console.warn("Could not connect sound output to recording destination.");
+                    }
+                }
+            }
+            updateCurrentMaxEmitters();
+            generateNewPattern(); 
+            updateStatusElement("Playing. Press '5' to Pause/Resume."); 
+            loop(); 
+            setTimeout(hideInfoTexts, 2000); // Hide all info texts after 2 seconds
+        }
+        
+        function draw() {
+            if (!userHasClicked || !audioLoaded || !isPlaying || isPausedBySystem) {
+                return;
+            }
+
+            background(0, 0, 0, 25); 
+
+            fft.analyze(); 
+            peakDetect.update(fft); 
+            kickDetect.update(fft); 
+
+            let bass = fft.getEnergy("bass");       
+            let mid = fft.getEnergy("mid");         
+            let treble = fft.getEnergy("treble");   
+            let overallAmp = fft.getEnergy(20, 20000) / 255; 
+            let isKick = kickDetect.isDetected; 
+
+            let speedFactor = map(overallAmp, 0, 1, 0.0005, 0.003); 
+            noiseZ += speedFactor;
+
+            for (let i = emitters.length - 1; i >= 0; i--) {
+                emitters[i].update(bass, mid, treble, overallAmp, isKick); 
+                emitters[i].display(); 
+                if (emitters[i].isDead()) {
+                    emitters.splice(i, 1); 
+                }
+            }
+
+            let shouldAddEmitter = peakDetect.isDetected || 
+                                (emitters.length < currentMaxEmitters / 2 && random(1) < 0.01 + overallAmp * 0.03) ||
+                                (emitters.length < currentMaxEmitters && random(1) < 0.003 + overallAmp * 0.01);
+
+            if (shouldAddEmitter && emitters.length < currentMaxEmitters) {
+               let r = random(1);
+               let x, y;
+               if (r < 0.6) { 
+                    x = random(width * 0.25, width * 0.75);
+                    y = random(height * 0.25, height * 0.75);
+               } else { 
+                    x = random(width);
+                    y = random(height);
+               }
+               addEmitter(x, y, bass, mid, treble);
+            }
+            
+            if (showSpectrum) {
+                drawAudioSpectrum(fft.spectrum); 
+            }
+
+            // Eye image fading and drawing logic
+            if (showEyeTargetState && eyeImageAlpha < 255) {
+                eyeImageAlpha = min(255, eyeImageAlpha + EYE_FADE_SPEED); 
+            } else if (!showEyeTargetState && eyeImageAlpha > 0) {
+                eyeImageAlpha = max(0, eyeImageAlpha - EYE_FADE_SPEED); 
+            }
+
+            if (eyeImageAlpha > 0 && eyeImg && eyeImg.width > 0) { 
+                let imgWidth = 70;
+                let imgHeight = eyeImg.height * (imgWidth / eyeImg.width); 
+                let imgX = (width - imgWidth) / 2;
+                let imgY = (height - imgHeight) / 2;
+                
+                push(); 
+                tint(255, eyeImageAlpha); 
+                image(eyeImg, imgX, imgY, imgWidth, imgHeight);
+                pop(); 
+            }
+        }
+
+        // --- RECORDING FUNCTIONS ---
+        function toggleRecording() {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+
+        function startRecording() {
+            if (!audioLoaded || !isPlaying) {
+                updateStatusElement("Please start the audio first to record.");
+                // console.warn("Recording attempt failed: Audio not playing or not loaded."); // Logged by updateStatusElement if hidden
+                return;
+            }
+            if (!canvasStream) { 
+                 canvasStream = document.querySelector('canvas').captureStream(FRAME_RATE);
+            }
+            if (!canvasStream || canvasStream.getVideoTracks().length === 0) {
+                updateStatusElement("Error: Could not capture canvas video.");
+                // console.error("Canvas stream has no video tracks."); // Logged by updateStatusElement if hidden
+                return;
+            }
+
+            recordedChunks = [];
+            let tracks = [...canvasStream.getVideoTracks()];
+
+            if (audioStreamDestination && audioStreamDestination.stream && audioStreamDestination.stream.getAudioTracks().length > 0) {
+                tracks.push(...audioStreamDestination.stream.getAudioTracks());
+            } else {
+                console.warn("No audio track available for recording. Recording video only.");
+                updateStatusElement("Recording video (no audio track found).");
+            }
+            
+            const combinedStream = new MediaStream(tracks);
+
+            let options = { mimeType: 'video/webm; codecs=vp9,opus' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                console.warn(`${options.mimeType} is not supported. Trying default.`);
+                options = { mimeType: 'video/webm' }; 
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    console.error("video/webm is not supported either. Recording may fail.");
+                    updateStatusElement("Recording format not supported by browser.");
+                    options = {}; 
+                }
+            }
+            
+            try {
+                mediaRecorder = new MediaRecorder(combinedStream, options);
+            } catch (e) {
+                console.error("Error creating MediaRecorder:", e);
+                updateStatusElement("Error initializing recorder.");
+                return;
+            }
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = downloadVideo;
+
+            mediaRecorder.onerror = (event) => {
+                console.error("MediaRecorder error:", event.error);
+                updateStatusElement("Recording error: " + event.error.name);
+                isRecording = false;
+                recordButton.textContent = 'Start Recording';
+                recordButton.classList.remove('recording');
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            recordButton.textContent = 'Stop Recording';
+            recordButton.classList.add('recording');
+            updateStatusElement("Recording started...");
+            // console.log("Recording started with options:", options, "Stream tracks:", tracks); // Logged by updateStatusElement if hidden
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordButton.textContent = 'Start Recording';
+                recordButton.classList.remove('recording');
+                updateStatusElement("Recording stopped. Preparing download...");
+            }
+        }
+
+        function downloadVideo() {
+            if (recordedChunks.length === 0) {
+                console.warn("No data recorded.");
+                updateStatusElement("No data recorded to download.");
+                return;
+            }
+            const mimeType = mediaRecorder.mimeType || 'video/webm';
+            const blob = new Blob(recordedChunks, { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'ebru_visualization.webm'; 
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            recordedChunks = []; 
+            updateStatusElement("Download started.");
+        }
+        
+        function startExperience() {
+            if (audioLoaded && userHasClicked && !sound.isPlaying()) {
+                if (getAudioContext().state !== 'running') {
+                    userStartAudio().then(() => {
+                        console.log("Audio context started by user gesture.");
+                        sound.loop(); 
+                        soundReadyAndPlaying(); 
+                    }).catch(e => {
+                        console.error("Error starting audio context:", e);
+                        updateStatusElement("Error starting audio. Click again or check console.");
+                    });
+                } else { 
+                    sound.loop(); 
+                    soundReadyAndPlaying(); 
+                }
+            }
+        }
+
+        function mousePressed() {
+            if (!userHasClicked) { 
+                userHasClicked = true;
+                startExperience();
+            } else if (audioLoaded && !sound.isPlaying() && isPausedBySystem) {
+                if (getAudioContext().state !== 'running') {
+                     userStartAudio().then(() => {sound.loop(); soundReadyAndPlaying();});
+                } else {
+                    sound.loop(); 
+                    soundReadyAndPlaying();
+                }
+            }
+            if (recordButton && event.target === recordButton) {
+                return;
+            }
+            return false; 
+        }
+
+        function addEmitter(x, y, bass, mid, treble) {
+            if (emitters.length >= currentMaxEmitters) return;
+            let newEmitter = new Emitter(x, y, bass, mid, treble);
+            emitters.push(newEmitter);
+        }
+
+        class Particle {
+            constructor(x, y, baseColor, bass, mid, treble) {
+                this.pos = createVector(x, y);
+                let angle = random(TWO_PI);
+                let initialSpeed = map(mid, 0, 255, 0.3, 1.8); 
+                this.vel = p5.Vector.fromAngle(angle).mult(initialSpeed);
+                this.acc = createVector(0, 0);
+                
+                this.lifespan = 150 + random(150) + map(treble, 0, 255, 0, 120); 
+                this.age = 0;
+
+                this.baseSize = map(bass, 0, 255, 1, 4) + random(-0.5, 0.5); 
+                this.currentSize = this.baseSize;
+                if (this.currentSize < 0.5) this.currentSize = 0.5;
+
+                let initialBrightness = map(bass, 0, 255, 60, 210); 
+                this.initialAlpha = map(treble, 0, 255, 80, 160); 
+                this.color = color(initialBrightness, this.initialAlpha); 
+                this.maxKickSizeBoost = 5; 
+                this.maxParticleSize = 12; 
+            }
+
+            applyForce(force) {
+                this.acc.add(force);
+            }
+
+            update(overallAmp, isKick) { 
+                let flowAngle = noise(this.pos.x * 0.002, this.pos.y * 0.002, noiseZ) * TWO_PI * 4;
+                let flowForce = p5.Vector.fromAngle(flowAngle);
+                flowForce.mult(map(overallAmp, 0, 1, 0.05, 0.2)); 
+                this.applyForce(flowForce);
+
+                if (flowAgitationActive) {
+                    let noiseXAgitation = noise(this.pos.x * 0.05, this.pos.y * 0.05, noiseZ + this.age * 0.01 + 100); 
+                    let noiseYAgitation = noise(this.pos.x * 0.05, this.pos.y * 0.05, noiseZ + this.age * 0.01 + 200); 
+                    let forceX = map(noiseXAgitation, 0, 1, -1, 1);
+                    let forceY = map(noiseYAgitation, 0, 1, -1, 1);
+                    let agitationForce = createVector(forceX, forceY);
+                    if (agitationForce.magSq() > 0) { 
+                        agitationForce.normalize();
+                    }
+                    agitationForce.mult(map(overallAmp, 0, 1, 0.15, 0.45)); 
+                    this.applyForce(agitationForce);
+                }
+                
+                let toCenter = createVector(width / 2 - this.pos.x, height / 2 - this.pos.y);
+                let distToCenter = toCenter.mag();
+                if (distToCenter > 5) { 
+                    toCenter.normalize();
+                    let pullStrength = map(distToCenter, width / 15, width / 2, 0.002, 0.045); 
+                    pullStrength = constrain(pullStrength, 0.001, 0.045); 
+                    toCenter.mult(pullStrength);
+                    this.applyForce(toCenter);
+                }
+
+                if (isKick) {
+                    let kickStrength = map(fft.getEnergy("bass"), 120, 255, 0.5, 2.5); 
+                    kickStrength = constrain(kickStrength, 0, 2.5);
+                    
+                    let burstDirection = p5.Vector.sub(this.pos, createVector(width / 2, height / 2));
+                    if (burstDirection.magSq() < 1) burstDirection = p5.Vector.random2D(); 
+                    burstDirection.normalize();
+                    burstDirection.mult(kickStrength * 3); 
+                    this.vel.add(burstDirection);
+                    this.vel.limit(5); 
+
+                    this.currentSize = min(this.baseSize + kickStrength * 2, this.maxParticleSize);
+                    
+                    let currentAlpha = this.color.levels[3];
+                    this.color.setAlpha(min(255, currentAlpha + kickStrength * 50));
+                } else {
+                    this.currentSize = lerp(this.currentSize, this.baseSize, 0.1); 
+                }
+
+                this.vel.add(this.acc);
+                this.pos.add(this.vel);
+                this.acc.mult(0); 
+
+                this.vel.mult(0.95); 
+                this.age++;
+                
+                let ageMappedAlpha = map(this.age, 0, this.lifespan, this.initialAlpha, 0);
+                let currentActualAlpha = this.color.levels[3];
+                if (!isKick) { 
+                    if (currentActualAlpha > ageMappedAlpha) { 
+                        this.color.setAlpha(max(ageMappedAlpha, currentActualAlpha * 0.95)); 
+                    } else {
+                        this.color.setAlpha(max(0, ageMappedAlpha)); 
+                    }
+                }
+                this.color.setAlpha(constrain(this.color.levels[3], 0, 255));
+            }
+
+            display() {
+                if (!particlesGloballyVisible) { 
+                    return; 
+                }
+                noStroke();
+                fill(this.color);
+                ellipse(this.pos.x, this.pos.y, this.currentSize, this.currentSize);
+            }
+
+            isDead() {
+                return this.age >= this.lifespan || this.color.levels[3] <= 1; 
+            }
+        }
+
+        class Emitter {
+            constructor(x, y, bass, mid, treble) {
+                this.pos = createVector(x, y);
+                this.particles = [];
+                this.lifespan = 100 + random(100) + map(complexityMode,1,3,0,100); 
+                this.age = 0;
+                this.baseParticleColor = particleColor; 
+
+                let initialBurstSize = 5 + Math.floor(complexityMode * 5) + Math.floor(map(mid,0,255,0,10));
+                for (let i = 0; i < initialBurstSize; i++) {
+                    this.particles.push(new Particle(this.pos.x, this.pos.y, this.baseParticleColor, bass, mid, treble));
+                }
+            }
+
+            update(bass, mid, treble, overallAmp, isKick) { 
+                this.age++;
+
+                if (this.age < this.lifespan && random(1) < 0.1 + overallAmp * 0.2) {
+                    let numNewParticles = 1 + Math.floor(map(mid, 0, 255, 0, 3) * (complexityMode * 0.5));
+                    if (isKick) numNewParticles += 2; 
+                    for (let i = 0; i < numNewParticles; i++) {
+                        this.particles.push(new Particle(this.pos.x, this.pos.y, this.baseParticleColor, bass, mid, treble));
+                    }
+                }
+
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    this.particles[i].update(overallAmp, isKick); 
+                    if (this.particles[i].isDead()) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+
+            display() {
+                for (let p of this.particles) {
+                    p.display();
+                }
+            }
+
+            isDead() {
+                return this.age >= this.lifespan && this.particles.length === 0;
+            }
+        }
+
+        function generateNewPattern() {
+            emitters = []; 
+            noiseSeed(random(100000)); 
+            noiseZ = random(1000);    
+
+            let numInitialEmitters = map(complexityMode, 1, 3, 1, 3); 
+            for (let i = 0; i < numInitialEmitters; i++) {
+                let r = random(1);
+                let x, y;
+                if (r < 0.8) { 
+                    x = random(width * 0.25, width * 0.75);
+                    y = random(height * 0.25, height * 0.75);
+                } else { 
+                    x = random(width);
+                    y = random(height);
+                }
+                let mockBass = random(50, 150);
+                let mockMid = random(50, 150); 
+                let mockTreble = random(50, 150);
+                addEmitter(x, y, mockBass, mockMid, mockTreble);
+            }
+            background(0); 
+
+            if (!infoHidden) { 
+                if (userHasClicked && audioLoaded && sound && sound.isPlaying() && !isPausedBySystem) {
+                   updateStatusElement("New pattern generated. Audio playing.");
+                } else if (userHasClicked && audioLoaded) { 
+                   updateStatusElement("New pattern generated. Audio paused or ready to start.");
+                } else if (audioLoaded) { 
+                    updateStatusElement("Audio loaded. Click to start & see pattern.");
+                }
+            }
+        }
+        
+        function drawAudioSpectrum(spectrumData) {
+            if (!spectrumData) return;
+            noStroke();
+            let barWidth = width / spectrumData.length;
+            for (let i = 0; i < spectrumData.length; i++) {
+                let amp = spectrumData[i];
+                let yPos = map(amp, 0, 255, height, height * 0.9); 
+                let h = height - yPos;
+                let brightness = map(i, 0, spectrumData.length, 30, 70); 
+                fill(brightness, 20); 
+                rect(i * barWidth, yPos, barWidth, h);
+            }
+        }
+
+        function keyPressed() {
+            if (!userHasClicked && key !== '5' && key !== '6' && key !== '7') { 
+                if (!infoHidden) updateStatusElement("Please click the screen to start the experience first.");
+                return;
+            }
+            if (!audioLoaded && key !== '5' && key !== '6' && key !== '7') { 
+                if (!infoHidden) updateStatusElement("Audio not loaded. Check file path or console.");
+                return;
+            }
+
+            if (key === '1') { 
+                if (!sound.isPlaying() && !isPausedBySystem) return;
+                generateNewPattern();
+            } else if (key === '2') { 
+                if (!sound.isPlaying() && !isPausedBySystem) return;
+                flowAgitationActive = !flowAgitationActive;
+                if (!infoHidden) updateStatusElement(flowAgitationActive ? "Flow Agitation ON." : "Flow Agitation OFF.");
+            } else if (key === '3') { 
+                if (!sound.isPlaying() && !isPausedBySystem) return;
+                complexityMode = (complexityMode % 3) + 1;
+                updateCurrentMaxEmitters(); 
+                generateNewPattern(); 
+                let complexityName = ["Subtle", "Standard", "Intense"][complexityMode-1];
+                if (!infoHidden) updateStatusElement(`Complexity: ${complexityName}. New pattern generated.`);
+            } else if (key === '4') { 
+                if (!sound.isPlaying() && !isPausedBySystem) return;
+                showSpectrum = !showSpectrum;
+                if (!infoHidden) updateStatusElement(showSpectrum ? "Spectrum visualization ON." : "Spectrum visualization OFF.");
+            } else if (key === '5') { 
+                if (!audioLoaded) {
+                    if (!infoHidden) updateStatusElement("No audio loaded. Cannot play/pause.");
+                    return;
+                }
+                if (!userHasClicked) { 
+                    userHasClicked = true;
+                    startExperience(); 
+                    return;
+                }
+
+                if (sound.isPlaying()) { 
+                    sound.pause();
+                    isPlaying = false; 
+                    isPausedBySystem = true; 
+                    noLoop(); 
+                    if (!infoHidden) updateStatusElement("Paused. Press '5' to resume.");
+                } else { 
+                    if (getAudioContext().state !== 'running') {
+                        userStartAudio().then(() => {
+                            sound.loop(); 
+                            soundReadyAndPlaying(); 
+                        });
+                    } else {
+                        sound.loop(); 
+                        soundReadyAndPlaying(); 
+                    }
+                }
+            } else if (key === '6') { 
+                particlesGloballyVisible = !particlesGloballyVisible;
+                if (!infoHidden) {
+                    updateStatusElement(particlesGloballyVisible ? "Particles Visible." : "Particles Hidden.");
+                }
+                if (!particlesGloballyVisible && isPausedBySystem) {
+                     background(0); 
+                }
+            } else if (key === '7') { 
+                showEyeTargetState = !showEyeTargetState;
+            }
+        }
+        
+        function updateCurrentMaxEmitters() {
+            currentMaxEmitters = 40 + complexityMode * 9; 
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight); 
+            background(0); 
+            if (userHasClicked && audioLoaded) {
+                if (!infoHidden) updateStatusElement("Canvas resized. Pattern cleared.");
+                 if(sound.isPlaying()) generateNewPattern(); 
+            } else if (audioLoaded) {
+                 if (!infoHidden) updateStatusElement("Audio loaded. Click anywhere to start.");
+            } else {
+                if (!infoHidden) updateStatusElement("Error loading audio. Please check console and refresh.");
+            }
+        }
+    </script>
+</body>
+</html>
