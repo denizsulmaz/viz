@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Stellarum by DS</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simplex-noise@2.4.0/simplex-noise.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 1em;
+            background-color: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 100;
+            transition: opacity 1s ease-out;
+            pointer-events: none;
+        }
+        .recordButton { 
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            padding: 5px 10px;
+            font-size: 0.8em;
+            background-color: #c0392b; 
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            z-index: 100;
+        }
+        .recordButton:hover {
+            background-color: #e74c3c;
+        }
+        .recordButton.recording {
+            background-color: #27ae60; 
+        }
+        .recordButton.recording:hover {
+            background-color: #2ecc71;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Click to Begin</div>
+    <button id="recordBtn" class="recordButton">Start Recording</button>
+    <script>
+        // --- Global State & Config ---
+        let scene, camera, renderer, particles;
+        let p5Instance; 
+        const PARTICLE_COUNT = 10000;
+        const PARTICLE_BOUNDS = 350;
+
+        let audioState = {
+            isReady: false,
+            isPlaying: false,
+            bass: 0, mid: 0, treble: 0, overallAmp: 0,
+            isKick: false, isSnare: false, isBlackHoleTrigger: false
+        };
+
+        let userHasClicked = false; 
+
+        let currentMode = 'NEBULA';
+        // REPLACED FLOCKING with GALACTIC_CURRENT
+        const MODES = ['NEBULA', 'GALACTIC_CURRENT'];
+        let simplex, clock;
+        let modeDuration = 15; 
+        let modeChangeTimer = 0;
+        
+        // Effects states
+        let isBlackHoleActive = false;
+        let blackHoleTimer = 0;
+        let isFlashing = false;
+        let flashTimer = 0;
+
+        // Recording state
+        let mediaRecorder, recordedChunks = [], isRecording = false, canvasStream, audioStreamDestination;
+        const FRAME_RATE = 30;
+
+        // --- P5.js Audio Analysis Sketch ---
+        const audioSketch = (p) => {
+            let sound, fft, kickDetect, snareDetect, blackHoleDetect;
+            const historyBufferSize = 100;
+            let bassHistory = [], midHistory = [];
+
+            p.preload = () => {
+                sound = p.loadSound('kozmos.mp3', 
+                    () => { audioState.isReady = true; document.getElementById('info').textContent = 'Click to Begin'; },
+                    () => { console.error("Failed to load kozmos.mp3"); document.getElementById('info').textContent = 'Error Loading Audio'; }
+                );
+            };
+
+            p.setup = () => {
+                p.noCanvas();
+                fft = new p5.FFT(0.8, 256);
+                kickDetect = new p5.PeakDetect(40, 120, 0.45, 15);
+                snareDetect = new p5.PeakDetect(1500, 10000, 0.35, 10);
+                blackHoleDetect = new p5.PeakDetect(4000, 15000, 0.5, 30);
+            };
+
+            p.draw = () => {
+                if (!audioState.isPlaying) return;
+                fft.analyze();
+                kickDetect.update(fft);
+                snareDetect.update(fft);
+                blackHoleDetect.update(fft);
+
+                audioState.bass = fft.getEnergy("bass");
+                audioState.mid = fft.getEnergy("mid");
+                audioState.treble = fft.getEnergy("treble");
+                audioState.isKick = kickDetect.isDetected;
+                audioState.isSnare = snareDetect.isDetected;
+                audioState.overallAmp = fft.getEnergy(20, 20000) / 255;
+                
+                audioState.isBlackHoleTrigger = blackHoleDetect.isDetected && audioState.bass < 80 && audioState.mid < 100;
+
+                // --- Mode Switching Logic ---
+                bassHistory.push(audioState.bass);
+                midHistory.push(audioState.mid);
+                if (bassHistory.length > historyBufferSize) bassHistory.shift();
+                if (midHistory.length > historyBufferSize) midHistory.shift();
+
+                let avgBass = bassHistory.reduce((a, b) => a + b, 0) / bassHistory.length;
+                let avgMid = midHistory.reduce((a, b) => a + b, 0) / midHistory.length;
+                
+                // Switch to GALACTIC_CURRENT on high, complex rhythms
+                if (audioState.isSnare && audioState.mid > avgMid * 1.5 && audioState.treble > 100) {
+                    setMode('GALACTIC_CURRENT');
+                } 
+                // Switch back to NEBULA on sustained bass or low energy
+                else if (audioState.bass > avgBass * 1.2 && audioState.mid < avgMid * 0.8) {
+                    setMode('NEBULA');
+                }
+            };
+
+            p.startAudioContext = async () => {
+                if (p.getAudioContext().state !== 'running') {
+                    await p.userStartAudio();
+                }
+            };
+            
+            p.getSound = () => sound;
+        };
+
+        // --- Three.js Main Application ---
+        function init() {
+            scene = new THREE.Scene();
+            clock = new THREE.Clock();
+            simplex = new SimplexNoise();
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.z = 400;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const velocities = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+            const baseColors = new Float32Array(PARTICLE_COUNT * 3);
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                positions[i3] = (Math.random() - 0.5) * PARTICLE_BOUNDS * 2;
+                positions[i3 + 1] = (Math.random() - 0.5) * PARTICLE_BOUNDS * 2;
+                positions[i3 + 2] = (Math.random() - 0.5) * PARTICLE_BOUNDS * 2;
+
+                const baseColorVal = 0.6 + Math.random() * 0.4;
+                colors[i3] = baseColorVal; colors[i3 + 1] = baseColorVal; colors[i3 + 2] = baseColorVal;
+                baseColors[i3] = baseColorVal; baseColors[i3 + 1] = baseColorVal; baseColors[i3 + 2] = baseColorVal;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('baseColor', new THREE.BufferAttribute(baseColors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 1.5, vertexColors: true, blending: THREE.AdditiveBlending,
+                transparent: true, depthWrite: false, sizeAttenuation: true
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            window.addEventListener('resize', onWindowResize, false);
+            window.addEventListener('click', startExperience, { once: true }); 
+            window.addEventListener('keydown', onKeyDown);
+            document.getElementById('recordBtn').onclick = toggleRecording;
+            canvasStream = renderer.domElement.captureStream(FRAME_RATE);
+        }
+
+        async function startExperience() {
+            if (userHasClicked || !p5Instance || !audioState.isReady) return;
+            userHasClicked = true;
+
+            try {
+                await p5Instance.startAudioContext();
+                const sound = p5Instance.getSound();
+                sound.loop();
+                audioState.isPlaying = true;
+                const infoEl = document.getElementById('info');
+                infoEl.style.opacity = '0';
+                setTimeout(() => { infoEl.style.display = 'none'; }, 1000);
+            } catch (e) {
+                console.error("Could not start audio experience:", e);
+                document.getElementById('info').textContent = 'Error starting audio.';
+                userHasClicked = false;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = clock.getDelta();
+            
+            if (!audioState.isPlaying) {
+                 renderer.render(scene, camera);
+                 return;
+            }
+            
+            const elapsedTime = clock.getElapsedTime();
+            
+            modeChangeTimer -= deltaTime;
+            if (modeChangeTimer <= 0) {
+                let newMode = currentMode;
+                while (newMode === currentMode) {
+                    newMode = MODES[Math.floor(Math.random() * MODES.length)];
+                }
+                setMode(newMode);
+            }
+
+            if (audioState.isBlackHoleTrigger && !isBlackHoleActive) {
+                isBlackHoleActive = true;
+                blackHoleTimer = 4;
+                setMode('BLACK HOLE');
+            }
+            if (isBlackHoleActive) {
+                blackHoleTimer -= deltaTime;
+                if (blackHoleTimer <= 0) {
+                    isBlackHoleActive = false;
+                    setMode(MODES[0]); 
+                }
+            }
+            if (isFlashing) {
+                flashTimer -= deltaTime;
+                if (flashTimer <= 0) isFlashing = false;
+            }
+
+            const ampSpeedFactor = 1 + audioState.overallAmp * 4;
+            camera.position.x = Math.sin(elapsedTime * 0.1 * ampSpeedFactor) * 400;
+            camera.position.z = Math.cos(elapsedTime * 0.1 * ampSpeedFactor) * 400;
+            camera.lookAt(scene.position);
+            
+            if (audioState.isKick) camera.position.multiplyScalar(1.02);
+            else camera.position.lerp(new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z).normalize().multiplyScalar(400), 0.1);
+
+            // UPDATED: Call the correct animation function based on mode
+            if (isBlackHoleActive) updateBlackHole(deltaTime);
+            else if (currentMode === 'NEBULA') updateNebula(deltaTime);
+            else if (currentMode === 'GALACTIC_CURRENT') updateGalacticCurrent(deltaTime);
+
+            const colors = particles.geometry.attributes.color.array;
+            const baseColors = particles.geometry.attributes.baseColor.array;
+            const specialColor = new THREE.Color(0.2, 0.4, 1.0);
+            const flashColor = new THREE.Color(1.5, 1.5, 1.5);
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                let currentColor = new THREE.Color(colors[i3], colors[i3 + 1], colors[i3 + 2]);
+
+                if (isFlashing) {
+                    currentColor.copy(flashColor);
+                } else {
+                    const baseColorVal = baseColors[i3];
+                    const baseColor = new THREE.Color(baseColorVal, baseColorVal, baseColorVal);
+                    currentColor.lerp(baseColor, deltaTime * 5);
+                    if (audioState.isSnare && audioState.treble > 180 && Math.random() < 0.05) {
+                       currentColor.copy(specialColor);
+                    }
+                }
+                colors[i3] = currentColor.r; colors[i3 + 1] = currentColor.g; colors[i3 + 2] = currentColor.b;
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            particles.geometry.attributes.velocity.needsUpdate = true;
+            particles.geometry.attributes.color.needsUpdate = true;
+
+            renderer.render(scene, camera);
+        }
+        
+        // --- Visual Behavior Functions ---
+        function updateBlackHole(deltaTime) {
+            const positions = particles.geometry.attributes.position.array;
+            const velocities = particles.geometry.attributes.velocity.array;
+            const center = new THREE.Vector3(0,0,0);
+            const pullStrength = 300 * deltaTime;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                let p = new THREE.Vector3(positions[i3], positions[i3+1], positions[i3+2]);
+                let dir = center.clone().sub(p);
+                let distSq = dir.lengthSq();
+
+                if (distSq > 1) {
+                    dir.normalize().multiplyScalar(pullStrength / (1 + distSq * 0.001));
+                    velocities[i3] += dir.x;
+                    velocities[i3+1] += dir.y;
+                    velocities[i3+2] += dir.z;
+                }
+
+                positions[i3] += velocities[i3] * deltaTime;
+                positions[i3+1] += velocities[i3+1] * deltaTime;
+                positions[i3+2] += velocities[i3+2] * deltaTime;
+
+                velocities[i3] *= 0.98;
+                velocities[i3+1] *= 0.98;
+                velocities[i3+2] *= 0.98;
+            }
+        }
+        
+        function updateNebula(deltaTime) {
+            const positions = particles.geometry.attributes.position.array;
+            const velocities = particles.geometry.attributes.velocity.array;
+            const time = performance.now() * 0.0001;
+            const noiseScale = 0.008;
+            const forceStrength = 15 + audioState.bass * 0.1;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                const p = new THREE.Vector3(positions[i3], positions[i3+1], positions[i3+2]);
+                const noiseVec = new THREE.Vector3(
+                    simplex.noise3D(p.x * noiseScale, p.y * noiseScale, time),
+                    simplex.noise3D(p.y * noiseScale, p.z * noiseScale, time),
+                    simplex.noise3D(p.z * noiseScale, p.x * noiseScale, time)
+                );
+                noiseVec.multiplyScalar(forceStrength * deltaTime);
+                
+                velocities[i3] += noiseVec.x; velocities[i3+1] += noiseVec.y; velocities[i3+2] += noiseVec.z;
+                positions[i3] += velocities[i3]; positions[i3+1] += velocities[i3+1]; positions[i3+2] += velocities[i3+2];
+                velocities[i3] *= 0.95; velocities[i3+1] *= 0.95; velocities[i3+2] *= 0.95;
+                
+                if (p.length() > PARTICLE_BOUNDS) {
+                     p.negate().multiplyScalar(0.9);
+                     positions[i3] = p.x; positions[i3+1] = p.y; positions[i3+2] = p.z;
+                }
+            }
+        }
+
+        // NEW "Galactic Current" mode function
+        function updateGalacticCurrent(deltaTime) {
+            const positions = particles.geometry.attributes.position.array;
+            const velocities = particles.geometry.attributes.velocity.array;
+            const time = performance.now() * 0.0002;
+            // Use different noise parameters for a different feel
+            const noiseScale = 0.01; 
+            const forceStrength = 50 + audioState.mid * 0.5; // Stronger force, reactive to mid-range
+            const turbulence = 1 + audioState.treble * 0.01;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                const p = new THREE.Vector3(positions[i3], positions[i3+1], positions[i3+2]);
+                
+                // A main directional flow that shifts slowly over time
+                const mainFlowAngle = simplex.noise2D(time * 0.1, i * 0.0001) * Math.PI;
+                const mainFlow = new THREE.Vector3(Math.cos(mainFlowAngle), Math.sin(mainFlowAngle), Math.cos(mainFlowAngle * 0.5));
+                mainFlow.multiplyScalar(0.1); // Base direction
+
+                // Add turbulence based on particle position
+                const noiseVec = new THREE.Vector3(
+                    simplex.noise3D(p.x * noiseScale, p.y * noiseScale, time),
+                    simplex.noise3D(p.y * noiseScale, p.z * noiseScale, time),
+                    simplex.noise3D(p.z * noiseScale, p.x * noiseScale, time)
+                );
+                noiseVec.multiplyScalar(turbulence);
+                
+                mainFlow.add(noiseVec); // Combine main flow with turbulence
+                mainFlow.multiplyScalar(forceStrength * deltaTime);
+                
+                velocities[i3] += mainFlow.x; velocities[i3+1] += mainFlow.y; velocities[i3+2] += mainFlow.z;
+                positions[i3] += velocities[i3]; positions[i3+1] += velocities[i3+1]; positions[i3+2] += velocities[i3+2];
+                
+                velocities[i3] *= 0.9; // Higher damping for more "current-like" feel
+                velocities[i3+1] *= 0.9;
+                velocities[i3+2] *= 0.9;
+                
+                // Wrap around boundaries
+                if (Math.abs(positions[i3]) > PARTICLE_BOUNDS) positions[i3] *= -1;
+                if (Math.abs(positions[i3+1]) > PARTICLE_BOUNDS) positions[i3+1] *= -1;
+                if (Math.abs(positions[i3+2]) > PARTICLE_BOUNDS) positions[i3+2] *= -1;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onKeyDown(event) {
+            if (!userHasClicked) return; 
+            switch(event.key) {
+                case '1': 
+                    const sound = p5Instance.getSound();
+                    if (audioState.isPlaying) {
+                        sound.pause();
+                        audioState.isPlaying = false;
+                    } else {
+                        sound.loop();
+                        audioState.isPlaying = true;
+                    }
+                    break;
+                case '2': 
+                    isFlashing = true;
+                    flashTimer = 0.4;
+                    break;
+                case '3': 
+                    modeDuration = Math.max(2, modeDuration * 0.6);
+                    modeChangeTimer = Math.min(modeChangeTimer, modeDuration);
+                    console.log('New mode duration base:', modeDuration.toFixed(2));
+                    break;
+            }
+        }
+        
+        let modeTimeout;
+        function setMode(mode) {
+            if (isBlackHoleActive && mode !== 'BLACK HOLE') return; 
+            if (currentMode === mode) return;
+            currentMode = mode;
+            modeChangeTimer = modeDuration * (0.8 + Math.random() * 0.4); 
+
+            const infoEl = document.getElementById('info');
+            if (infoEl) {
+                // infoEl.textContent = `MODE: ${mode}`;
+                infoEl.style.display = 'block';
+                infoEl.style.opacity = '1';
+                
+                clearTimeout(modeTimeout);
+                modeTimeout = setTimeout(() => {
+                    infoEl.style.opacity = '0';
+                }, 1500);
+            }
+        }
+        
+        function toggleRecording() {
+            if (!isRecording) startRecording(); else stopRecording();
+        }
+
+        function startRecording() {
+            if (!audioState.isReady) { console.warn("Audio not ready."); return; }
+            if (!canvasStream) { canvasStream = renderer.domElement.captureStream(FRAME_RATE); }
+
+            const sound = p5Instance.getSound();
+            if (!audioStreamDestination) {
+                audioStreamDestination = p5Instance.getAudioContext().createMediaStreamDestination();
+                sound.output.connect(audioStreamDestination);
+            }
+
+            recordedChunks = [];
+            let tracks = [...canvasStream.getVideoTracks(), ...audioStreamDestination.stream.getAudioTracks()];
+            const combinedStream = new MediaStream(tracks);
+
+            let options = { mimeType: 'video/webm; codecs=vp9,opus' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/webm' };
+            }
+            
+            mediaRecorder = new MediaRecorder(combinedStream, options);
+            mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunks.push(event.data); };
+            mediaRecorder.onstop = downloadVideo;
+            mediaRecorder.start();
+            
+            isRecording = true;
+            document.getElementById('recordBtn').textContent = 'Stop Recording';
+            document.getElementById('recordBtn').classList.add('recording');
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                isRecording = false;
+                document.getElementById('recordBtn').textContent = 'Start Recording';
+                document.getElementById('recordBtn').classList.remove('recording');
+            }
+        }
+
+        function downloadVideo() {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'audiovisualizer_3d.webm';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }
+        
+        // --- Start Application ---
+        p5Instance = new p5(audioSketch);
+        init();
+        animate();
+
+    </script>
+</body>
+
+
+<!-- by Deniz Sulmaz -->
+</html>
+
