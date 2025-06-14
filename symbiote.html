@@ -103,7 +103,7 @@
 
     <script>
         // ——— SETTINGS ———
-        const numParticles = 12000;
+        const numParticles = 8500;
         const particleSize = 1.5;
         const sphereRadius = 250;
         const centralGravityStrength = 0.705;
@@ -230,6 +230,13 @@
             // Prevent clicks on the record button from starting the animation
             if (mouseY > 60 || mouseX < windowWidth - 150) {
                  if (audioLoaded && !hasStarted) {
+                    // --- FIX FOR IOS AUDIO ---
+                    // The AudioContext must be resumed by a user gesture.
+                    if (getAudioContext().state !== 'running') {
+                        getAudioContext().resume();
+                    }
+                    // --- END OF FIX ---
+                    
                     song.loop();
                     hasStarted = true;
                     document.body.classList.add('playing');
