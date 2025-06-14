@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generative Audiovisualizer</title>
+    <!-- p5.js libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
+    <!-- p5.easycam for 3D camera controls -->
+    <script src="https://cdn.jsdelivr.net/npm/p5.easycam@1.0.0/p5.easycam.min.js"></script>
+    <!-- CCapture.js for recording the canvas -->
+    <script src="https://unpkg.com/ccapture.js@1.1.0/build/CCapture.all.min.js"></script>
+    <style>
+        /* Basic CSS for a clean, dark, fullscreen look */
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            /* Hide default cursor and use custom one */
+            cursor: none; 
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        /* Custom circular cursor */
+        .custom-cursor {
+            width: 20px;
+            height: 20px;
+            border: 0.1px solid rgba(255, 255, 255, 0.113);
+            border-radius: 50%;
+            position: fixed;
+            transform: translate(-50%, -50%);
+            pointer-events: none; /* Allows clicks to pass through */
+            z-index: 9999;
+            transition: transform 0.1s ease-out;
+        }
+        /* Styling for the info/control panel */
+        #controls {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            background-color: rgb(0, 0, 0);
+            padding: 65px 55px;
+            border-radius: 200px;
+            text-align: center;
+        }
+        #controls img{
+            width: 50px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 1.5em;
+            font-weight: 300;
+        }
+        body.playing #controls {
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+        }
+        /* Record button styling */
+        #record-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 20;
+            padding: 10px 15px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+        }
+        #record-button.recording {
+             background-color: #c00;
+             color: white;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="custom-cursor"></div>
+    <main></main>
+    <div id="controls">
+        <img src="eye.png" alt="">
+        <h1>Generative <br> Audio Sphere</h1>
+    </div>
+    <button id="record-button">Rec</button>
+
+    <script>
+        // ——— SETTINGS ———
+        const numParticles = 12000;
+        const particleSize = 1.5;
+        const sphereRadius = 250;
+        const centralGravityStrength = 0.705;
+        const noiseSpeed = 0.005;
+
+        // --- Global Variables ---
+        let particles = [];
+        let song;
+        let fft;
+        let audioLoaded = false;
+        let hasStarted = false;
+        let sceneRotationX = 0, sceneRotationY = 0;
+        let noiseTime = 0;
+
+        // --- Recording Variables ---
+        let capturer;
+        let isRecording = false;
+
+        function preload() {
+            song = loadSound('media/mamamiafull.mp3');
+        }
+
+        function setup() {
+            let p5canvas = createCanvas(windowWidth, windowHeight, WEBGL);
+            
+            // Link canvas to CCapture instance
+            capturer = new CCapture({
+                format: 'webm',
+                framerate: 60,
+                verbose: false
+            });
+
+            let cam = createEasyCam();
+            cam.setDistance(sphereRadius * 2.5);
+
+            for (let i = 0; i < numParticles; i++) {
+                particles.push(new Particle());
+            }
+
+            fft = new p5.FFT(0.8, 128);
+            fft.setInput(song);
+            audioLoaded = true;
+
+            // --- Event Listeners ---
+            const recordButton = document.getElementById('record-button');
+            recordButton.addEventListener('click', toggleRecording);
+            
+            // Custom cursor logic
+            const cursor = document.querySelector('.custom-cursor');
+            window.addEventListener('mousemove', e => {
+                cursor.style.top = e.clientY + 'px';
+                cursor.style.left = e.clientX + 'px';
+            });
+        }
+
+        function draw() {
+            background(0);
+            rotateX(sceneRotationX);
+            rotateY(sceneRotationY);
+            
+            if (song.isPlaying()) {
+                sceneRotationX += 0.0005;
+                sceneRotationY += 0.001;
+            }
+
+            let bass = 0, mid = 0, treble = 0;
+            if (audioLoaded && song.isPlaying()) {
+                fft.analyze();
+                bass = fft.getEnergy("bass");
+                mid = fft.getEnergy("mid");
+                treble = fft.getEnergy("treble");
+            }
+            
+            push();
+            noFill();
+            stroke(80, 80, 80, 150); 
+            strokeWeight(0.03);
+            sphere(sphereRadius);
+            pop();
+
+            stroke(255);
+            strokeWeight(particleSize);
+            beginShape(POINTS);
+            
+            const bassForce = map(bass, 0, 255, 0, 4.0);
+            const midForce = map(mid, 0, 255, 0, 1.0);
+            const trebleVibration = map(treble, 0, 255, 0, 2.0);
+            
+            if(song.isPlaying()){
+                noiseTime += noiseSpeed;
+            }
+
+            for (let p of particles) {
+                p.applyForces(bassForce, midForce, trebleVibration);
+                p.update(bass);
+                p.checkBounds();
+                p.show();
+            }
+            endShape();
+
+            // Capture the frame if recording is active
+            if (isRecording) {
+                capturer.capture(document.querySelector('canvas'));
+            }
+        }
+        
+        // --- Recording Control ---
+        function toggleRecording() {
+            isRecording = !isRecording;
+            const button = document.getElementById('record-button');
+            if (isRecording) {
+                capturer.start();
+                button.textContent = 'Stop';
+                button.classList.add('recording');
+            } else {
+                capturer.stop();
+                capturer.save();
+                button.textContent = 'Record';
+                button.classList.remove('recording');
+            }
+        }
+
+        function mousePressed() {
+            // Prevent clicks on the record button from starting the animation
+            if (mouseY > 60 || mouseX < windowWidth - 150) {
+                 if (audioLoaded && !hasStarted) {
+                    song.loop();
+                    hasStarted = true;
+                    document.body.classList.add('playing');
+                }
+            }
+        }
+
+        function keyPressed() {
+            if (keyCode === 32 && hasStarted) {
+                if (song.isPlaying()) {
+                    song.pause();
+                } else {
+                    song.play();
+                }
+            }
+        }
+        
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+        }
+
+        // --- Particle Class ---
+        class Particle {
+            constructor() {
+                this.pos = p5.Vector.random3D().mult(random(sphereRadius * 0.5));
+                this.vel = createVector();
+                this.acc = createVector();
+                this.maxSpeed = 4;
+            }
+
+            applyForces(bassForce, midForce, trebleVibration) {
+                let gravity = p5.Vector.mult(this.pos, -1);
+                gravity.setMag(centralGravityStrength);
+                this.acc.add(gravity);
+
+                let noiseScale = 0.007;
+                let t = noiseTime;
+                
+                let noiseX = map(noise(this.pos.y * noiseScale, this.pos.z * noiseScale, t), 0, 1, -1, 1);
+                let noiseY = map(noise(this.pos.x * noiseScale, this.pos.z * noiseScale, t), 0, 1, -1, 1);
+                let noiseZ = map(noise(this.pos.x * noiseScale, this.pos.y * noiseScale, t), 0, 1, -1, 1);
+
+                let noiseForce = createVector(noiseX, noiseY, noiseZ);
+                noiseForce.setMag(0.5 + midForce * 0.5);
+                noiseForce.mult(1 + bassForce);
+                this.acc.add(noiseForce);
+
+                if (trebleVibration > 0.1) {
+                    let vibration = p5.Vector.random3D().mult(trebleVibration);
+                    this.pos.add(vibration);
+                }
+            }
+
+            update(bass) {
+                this.maxSpeed = map(bass, 0, 255, 4, 12);
+                this.vel.add(this.acc);
+                this.vel.limit(this.maxSpeed);
+                this.pos.add(this.vel);
+                this.acc.mult(0);
+            }
+
+            checkBounds() {
+                if (this.pos.mag() > sphereRadius) {
+                    let normal = this.pos.copy().normalize().mult(-1);
+                    let reflection = this.vel.copy().reflect(normal);
+                    this.vel.set(reflection);
+                    this.pos.setMag(sphereRadius);
+                }
+            }
+            
+            show() {
+                vertex(this.pos.x, this.pos.y, this.pos.z);
+            }
+        }
+    </script>
+</body>
+</html>
