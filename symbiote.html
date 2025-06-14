@@ -9,8 +9,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
     <!-- p5.easycam for 3D camera controls -->
     <script src="https://cdn.jsdelivr.net/npm/p5.easycam@1.0.0/p5.easycam.min.js"></script>
-    <!-- CCapture.js for recording the canvas -->
-    <script src="https://unpkg.com/ccapture.js@1.1.0/build/CCapture.all.min.js"></script>
     <style>
         /* Basic CSS for a clean, dark, fullscreen look */
         html, body {
@@ -21,7 +19,6 @@
             background-color: #000;
             color: #fff;
             font-family: 'Inter', sans-serif;
-            /* Hide default cursor and use custom one */
             cursor: none; 
         }
         canvas {
@@ -35,35 +32,44 @@
         .custom-cursor {
             width: 20px;
             height: 20px;
-            border: 0.1px solid rgba(255, 255, 255, 0.113);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 50%;
             position: fixed;
             transform: translate(-50%, -50%);
-            pointer-events: none; /* Allows clicks to pass through */
+            pointer-events: none;
             z-index: 9999;
             transition: transform 0.1s ease-out;
         }
-        /* Styling for the info/control panel */
+        /* Styling for the initial prompt */
         #controls {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             z-index: 10;
-            background-color: rgb(0, 0, 0);
-            padding: 65px 55px;
-            border-radius: 200px;
+            background-color: #000;
+            padding: 40px;
+            border-radius: 50%;
+            width: 200px;
+            height: 200px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             text-align: center;
+            cursor: pointer;
         }
-        #controls img{
-            width: 50px;
-            margin-bottom: 20px;
+        #controls img {
+             width: 50px;
+             margin-bottom: 20px;
         }
         h1 {
             margin-top: 0;
             font-size: 1.5em;
             font-weight: 300;
+            line-height: 1.4;
         }
+        /* Hides the start prompt once the animation begins */
         body.playing #controls {
             opacity: 0;
             transition: opacity 0.5s ease-in-out;
@@ -99,7 +105,7 @@
         <img src="eye.png" alt="">
         <h1>Generative <br> Audio Sphere</h1>
     </div>
-    <button id="record-button">Rec</button>
+    <button id="record-button" disabled>Record</button>
 
     <script>
         // ——— SETTINGS ———
@@ -108,6 +114,7 @@
         const sphereRadius = 250;
         const centralGravityStrength = 0.705;
         const noiseSpeed = 0.005;
+        const audioFile = 'media/mamamiafull.mp3';
 
         // --- Global Variables ---
         let particles = [];
@@ -119,23 +126,21 @@
         let noiseTime = 0;
 
         // --- Recording Variables ---
-        let capturer;
+        let mediaRecorder;
+        let recordedChunks = [];
         let isRecording = false;
 
         function preload() {
-            song = loadSound('media/mamamiafull.mp3');
+            song = loadSound(
+                audioFile, 
+                () => { audioLoaded = true; console.log("Audio loaded successfully."); },
+                (err) => { console.error("Failed to load audio:", err); }
+            );
         }
 
         function setup() {
-            let p5canvas = createCanvas(windowWidth, windowHeight, WEBGL);
+            createCanvas(windowWidth, windowHeight, WEBGL);
             
-            // Link canvas to CCapture instance
-            capturer = new CCapture({
-                format: 'webm',
-                framerate: 60,
-                verbose: false
-            });
-
             let cam = createEasyCam();
             cam.setDistance(sphereRadius * 2.5);
 
@@ -145,13 +150,10 @@
 
             fft = new p5.FFT(0.8, 128);
             fft.setInput(song);
-            audioLoaded = true;
 
-            // --- Event Listeners ---
-            const recordButton = document.getElementById('record-button');
-            recordButton.addEventListener('click', toggleRecording);
-            
-            // Custom cursor logic
+            // Event Listeners
+            document.getElementById('controls').addEventListener('click', startExperience);
+            document.getElementById('record-button').addEventListener('click', toggleRecording);
             const cursor = document.querySelector('.custom-cursor');
             window.addEventListener('mousemove', e => {
                 cursor.style.top = e.clientY + 'px';
@@ -161,6 +163,8 @@
 
         function draw() {
             background(0);
+            if (!hasStarted) return;
+            
             rotateX(sceneRotationX);
             rotateY(sceneRotationY);
             
@@ -203,47 +207,99 @@
                 p.show();
             }
             endShape();
-
-            // Capture the frame if recording is active
-            if (isRecording) {
-                capturer.capture(document.querySelector('canvas'));
-            }
         }
         
-        // --- Recording Control ---
-        function toggleRecording() {
-            isRecording = !isRecording;
-            const button = document.getElementById('record-button');
-            if (isRecording) {
-                capturer.start();
-                button.textContent = 'Stop';
-                button.classList.add('recording');
-            } else {
-                capturer.stop();
-                capturer.save();
-                button.textContent = 'Record';
-                button.classList.remove('recording');
-            }
-        }
-
-        function mousePressed() {
-            // Prevent clicks on the record button from starting the animation
-            if (mouseY > 60 || mouseX < windowWidth - 150) {
-                 if (audioLoaded && !hasStarted) {
-                    // --- FIX FOR IOS AUDIO ---
-                    // The AudioContext must be resumed by a user gesture.
-                    if (getAudioContext().state !== 'running') {
-                        getAudioContext().resume();
-                    }
-                    // --- END OF FIX ---
-                    
+        // This function is the most reliable way to start audio on all browsers, especially mobile.
+        function startExperience() {
+            if (audioLoaded && !hasStarted) {
+                // The AudioContext must be resumed by a user gesture.
+                const audioContext = getAudioContext();
+                if (audioContext.state !== 'running') {
+                    audioContext.resume().then(() => {
+                        console.log('Audio Context resumed successfully.');
+                        // Now that we know the audio is unlocked, we can start the song.
+                        song.loop();
+                        hasStarted = true;
+                        document.body.classList.add('playing');
+                        document.getElementById('record-button').disabled = false;
+                    }).catch(err => {
+                        console.error('Failed to resume Audio Context:', err);
+                    });
+                } else {
+                    // If context is already running, just start the song.
                     song.loop();
                     hasStarted = true;
                     document.body.classList.add('playing');
+                    document.getElementById('record-button').disabled = false;
                 }
             }
         }
 
+        // We use touchStarted for mobile devices, as it's more reliable than click.
+        function touchStarted() {
+            startExperience();
+            return false; // prevent default browser behavior
+        }
+
+        function toggleRecording() {
+            if (!isRecording) {
+                startCombinedRecording();
+            } else {
+                stopCombinedRecording();
+            }
+        }
+
+        function startCombinedRecording() {
+            const canvasStream = document.querySelector('canvas').captureStream(60);
+            const audioContext = getAudioContext();
+            const audioDestination = audioContext.createMediaStreamDestination();
+            p5.soundOut.connect(audioDestination);
+            const audioStream = audioDestination.stream;
+            
+            const combinedStream = new MediaStream([
+                ...canvasStream.getVideoTracks(),
+                ...audioStream.getAudioTracks()
+            ]);
+
+            mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+            recordedChunks = [];
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'audiovisualizer_recording.webm';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            const button = document.getElementById('record-button');
+            button.textContent = 'Stop';
+            button.classList.add('recording');
+        }
+        
+        function stopCombinedRecording() {
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+            }
+            isRecording = false;
+            const button = document.getElementById('record-button');
+            button.textContent = 'Record';
+            button.classList.remove('recording');
+        }
+        
         function keyPressed() {
             if (keyCode === 32 && hasStarted) {
                 if (song.isPlaying()) {
@@ -258,7 +314,6 @@
             resizeCanvas(windowWidth, windowHeight);
         }
 
-        // --- Particle Class ---
         class Particle {
             constructor() {
                 this.pos = p5.Vector.random3D().mult(random(sphereRadius * 0.5));
